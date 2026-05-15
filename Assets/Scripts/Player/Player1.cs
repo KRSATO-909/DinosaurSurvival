@@ -17,20 +17,28 @@ public class PlayerMovement : MonoBehaviour
     [Header("Attack")]
     public Transform attackPoint;
     public float attackRange = 1.5f;
-    public float attackCooldown = 0.5f;
+    public float attackCooldown = 0.8f; // Кулдаун вернулся сюда!
 
     private CharacterController controller;
     private float verticalVelocity;
     private bool isGrounded;
-    private float lastAttackTime;
     private bool isMoving;
     private bool isSprinting;
+    private bool isAttacking;
+    private float speedMultiplier = 1f;
+    private float lastAttackTime;
+    private bool attackProcessed;
+
+    // Для ПКМ: запоминаем направление движения
+    private Vector3 lastMoveDirection;
+    private bool wasMovingBeforeFreeLook;
 
     void Start()
     {
         controller = GetComponent<CharacterController>();
 
-        // Если groundCheck не назначен, создаем автоматически
+        lastAttackTime = -attackCooldown;
+
         if (groundCheck == null)
         {
             GameObject go = new GameObject("GroundCheck");
@@ -39,7 +47,6 @@ public class PlayerMovement : MonoBehaviour
             groundCheck = go.transform;
         }
 
-        // Если attackPoint не назначен, создаем автоматически
         if (attackPoint == null)
         {
             GameObject go = new GameObject("AttackPoint");
@@ -61,9 +68,11 @@ public class PlayerMovement : MonoBehaviour
         float horizontal = Input.GetAxis("Horizontal");
         float vertical = Input.GetAxis("Vertical");
 
-        Vector3 moveDirection = new Vector3(horizontal, 0, vertical);
+        Vector3 inputDirection = new Vector3(horizontal, 0, vertical);
 
         // Получаем направление относительно камеры
+        Vector3 moveDirection = Vector3.zero;
+
         if (Camera.main != null)
         {
             Vector3 cameraForward = Camera.main.transform.forward;
@@ -76,41 +85,90 @@ public class PlayerMovement : MonoBehaviour
             moveDirection = cameraForward * vertical + cameraRight * horizontal;
         }
 
+        bool isFreeLooking = Input.GetMouseButton(1);
+
+        // Логика ПКМ: запоминаем направление когда начинаем свободный обзор
+        if (isFreeLooking)
+        {
+            // Если только что нажали ПКМ и двигались — запоминаем направление
+            if (inputDirection.magnitude > 0.1f && !wasMovingBeforeFreeLook)
+            {
+                lastMoveDirection = moveDirection.normalized;
+                wasMovingBeforeFreeLook = true;
+            }
+            // Если стоим на месте — обнуляем
+            else if (inputDirection.magnitude <= 0.1f)
+            {
+                wasMovingBeforeFreeLook = false;
+            }
+
+            // Используем сохранённое направление
+            if (wasMovingBeforeFreeLook && inputDirection.magnitude > 0.1f)
+            {
+                moveDirection = lastMoveDirection * inputDirection.magnitude;
+            }
+        }
+        else
+        {
+            // Отпустили ПКМ — сбрасываем
+            wasMovingBeforeFreeLook = false;
+        }
+
         // Определяем состояние движения
         isMoving = moveDirection.magnitude > 0.1f;
         isSprinting = Input.GetKey(KeyCode.LeftShift) && isMoving;
 
         // Скорость
         float speed = isSprinting ? sprintSpeed : walkSpeed;
+        speed *= speedMultiplier;
 
-        // Поворот в сторону движения (только если не зажат ПКМ и не атакуем)
-        if (isMoving && !Input.GetMouseButton(1))
+        // Поворот в сторону движения
+        // ВАЖНО: поворачиваем только если двигаемся и не в свободном обзоре
+        if (isMoving && !isFreeLooking && !isAttacking)
         {
             Quaternion targetRotation = Quaternion.LookRotation(moveDirection.normalized);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+        }
+        // Если в свободном обзоре — продолжаем смотреть в lastMoveDirection
+        else if (isMoving && isFreeLooking && wasMovingBeforeFreeLook)
+        {
+            Quaternion targetRotation = Quaternion.LookRotation(lastMoveDirection);
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
         }
 
         // Гравитация
         verticalVelocity += gravity * Time.deltaTime;
 
-        // ОДИН вызов Move - объединяем движение и гравитацию
+        // Движение
         Vector3 velocity = moveDirection.normalized * speed;
         velocity.y = verticalVelocity;
         controller.Move(velocity * Time.deltaTime);
 
-        // Атака с кулдауном
-        if (Input.GetMouseButtonDown(0) && Time.time >= lastAttackTime + attackCooldown)
+        // Обработка урона атаки
+        if (isAttacking && !attackProcessed)
         {
-            Attack();
-            lastAttackTime = Time.time;
+            Animator animator = GetComponent<Animator>();
+            if (animator != null)
+            {
+                AnimatorStateInfo stateInfo = animator.GetCurrentAnimatorStateInfo(0);
+                if (stateInfo.normalizedTime >= 0.3f && stateInfo.normalizedTime <= 0.7f)
+                {
+                    PerformAttackDamage();
+                    attackProcessed = true;
+                }
+            }
+        }
+
+        if (!isAttacking)
+        {
+            attackProcessed = false;
         }
     }
 
-    void Attack()
+    void PerformAttackDamage()
     {
         Debug.Log("Укус!");
 
-        // Проверка попадания
         Collider[] hits = Physics.OverlapSphere(attackPoint.position, attackRange);
         foreach (Collider hit in hits)
         {
@@ -121,38 +179,37 @@ public class PlayerMovement : MonoBehaviour
         }
     }
 
-    // Публичные методы для AnimationController
-    public bool IsMoving()
+    // Публичные методы
+    public bool IsMoving() => isMoving;
+    public bool IsSprinting() => isSprinting;
+    public bool IsGrounded() => isGrounded;
+    public bool IsFreeLooking() => Input.GetMouseButton(1);
+
+    public bool CanAttack()
     {
-        return isMoving;
+        return Time.time >= lastAttackTime + attackCooldown;
     }
 
-    public bool IsSprinting()
+    public void OnAttackStarted()
     {
-        return isSprinting;
+        lastAttackTime = Time.time;
     }
 
-    public bool IsGrounded()
+    public void SetAttacking(bool attacking)
     {
-        return isGrounded;
+        isAttacking = attacking;
     }
 
-    public bool IsFreeLooking()
+    public void SetSpeedMultiplier(float multiplier)
     {
-        return Input.GetMouseButton(1);
+        speedMultiplier = multiplier;
     }
 
-    // Визуализация для отладки
     void OnDrawGizmosSelected()
     {
         if (attackPoint != null)
         {
-            // Кулдаун визуализация
-            if (Time.time < lastAttackTime + attackCooldown)
-                Gizmos.color = Color.grey;
-            else
-                Gizmos.color = Color.red;
-
+            Gizmos.color = Time.time < lastAttackTime + attackCooldown ? Color.grey : Color.red;
             Gizmos.DrawWireSphere(attackPoint.position, attackRange);
         }
 

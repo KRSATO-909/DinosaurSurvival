@@ -3,14 +3,17 @@ using UnityEngine;
 public class MouseLook : MonoBehaviour
 {
     [Header("Target")]
-    public Transform player; // Куб игрока
-    public Transform headPosition; // Точка для камеры 1-го лица
+    public Transform player;
+    public Transform headPosition;
 
     [Header("Third Person Settings")]
     public Vector3 thirdPersonOffset = new Vector3(0, 2f, -5f);
     public float thirdPersonSmooth = 10f;
-    public float minDistance = 1f; // Минимальная дистанция камеры при коллизии
-    public LayerMask cameraCollisionLayers; // Слои, которые блокируют камеру
+    public float minDistance = 1f;
+    public float maxDistance = 8f;
+    public float zoomSpeed = 3f;
+    public float collisionOffset = 0.5f; // Отступ от стен (увеличено с 0.3)
+    public LayerMask cameraCollisionLayers;
 
     [Header("First Person Settings")]
     public Vector3 firstPersonOffset = new Vector3(0, 1.5f, 0.5f);
@@ -24,163 +27,238 @@ public class MouseLook : MonoBehaviour
     public float freeLookSensitivity = 3f;
     public float returnSpeed = 5f;
 
+    [Header("Camera Switch")]
+    public float switchSpeed = 8f;
+
     private float yaw = 0f;
     private float pitch = 20f;
-
     private float freeLookYaw = 0f;
     private float freeLookPitch = 0f;
-
     private bool isFirstPerson = false;
-    private float currentCameraDistance; // Текущая реальная дистанция камеры
+    private float currentZoom;
+
+    // Для плавного переключения
+    private Vector3 transitionStartPos;
+    private Quaternion transitionStartRot;
+    private bool isTransitioning = false;
+    private float transitionProgress = 0f;
 
     void Start()
     {
-        // Скрываем курсор
         Cursor.lockState = CursorLockMode.Locked;
 
-        // Если headPosition не назначен, ищем автоматически
         if (headPosition == null)
         {
             GameObject head = GameObject.Find("HeadCameraPosition");
-            if (head != null)
-                headPosition = head.transform;
+            if (head != null) headPosition = head.transform;
         }
 
-        // Если слои не назначены, используем всё кроме Player
         if (cameraCollisionLayers == 0)
-            cameraCollisionLayers = ~0; // Всё
+            cameraCollisionLayers = ~0;
 
-        // Запоминаем начальные углы и дистанцию
-        yaw = transform.eulerAngles.y;
-        currentCameraDistance = thirdPersonOffset.magnitude;
+        yaw = player.eulerAngles.y;
+        currentZoom = thirdPersonOffset.magnitude;
+
+        // Начальная позиция камеры
+        Vector3 startPos = GetThirdPersonTargetPosition();
+        transform.position = startPos;
+        transform.LookAt(GetLookTarget());
     }
 
     void LateUpdate()
     {
-        if (player == null)
+        if (player == null) return;
+
+        // Переключение камеры
+        if (Input.GetKeyDown(KeyCode.V) && !isTransitioning)
         {
-            Debug.LogError("Не назначен player в DinoCamera!");
-            return;
+            StartTransition();
         }
 
-        // Переключение камеры по V
-        if (Input.GetKeyDown(KeyCode.V))
+        // Зум скроллом (в 3-м лице и не в переходе)
+        if (!isFirstPerson && !isTransitioning)
         {
-            isFirstPerson = !isFirstPerson;
+            float scroll = Input.GetAxis("Mouse ScrollWheel");
+            if (Mathf.Abs(scroll) > 0.01f)
+            {
+                currentZoom -= scroll * zoomSpeed;
+                currentZoom = Mathf.Clamp(currentZoom, minDistance, maxDistance);
+            }
         }
 
-        // Ввод мыши
-        float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
-        float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity;
-
-        // Обработка свободного обзора (ПКМ) только в 3-м лице
-        bool isFreeLook = Input.GetMouseButton(1) && !isFirstPerson;
-
-        if (isFreeLook)
+        // Ввод мыши (только если не в переходе)
+        if (!isTransitioning)
         {
-            // Свободный обзор
-            freeLookYaw += mouseX * (freeLookSensitivity / mouseSensitivity);
-            freeLookPitch -= mouseY * (freeLookSensitivity / mouseSensitivity);
-            freeLookPitch = Mathf.Clamp(freeLookPitch, minVerticalAngle, maxVerticalAngle);
+            float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
+            float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity;
+
+            bool isFreeLook = Input.GetMouseButton(1) && !isFirstPerson;
+
+            if (isFreeLook)
+            {
+                freeLookYaw += mouseX * (freeLookSensitivity / mouseSensitivity);
+                freeLookPitch -= mouseY * (freeLookSensitivity / mouseSensitivity);
+                freeLookPitch = Mathf.Clamp(freeLookPitch, minVerticalAngle, maxVerticalAngle);
+            }
+            else
+            {
+                yaw += mouseX;
+                pitch -= mouseY;
+                pitch = Mathf.Clamp(pitch, minVerticalAngle, maxVerticalAngle);
+
+                freeLookYaw = Mathf.Lerp(freeLookYaw, 0, returnSpeed * Time.deltaTime);
+                freeLookPitch = Mathf.Lerp(freeLookPitch, 0, returnSpeed * Time.deltaTime);
+            }
+
+            if (isFirstPerson)
+                UpdateFirstPerson();
+            else
+                UpdateThirdPerson();
         }
         else
         {
-            // Обычный поворот камеры
-            yaw += mouseX;
-            pitch -= mouseY;
-            pitch = Mathf.Clamp(pitch, minVerticalAngle, maxVerticalAngle);
-
-            // Плавный возврат из свободного обзора
-            freeLookYaw = Mathf.Lerp(freeLookYaw, 0, returnSpeed * Time.deltaTime);
-            freeLookPitch = Mathf.Lerp(freeLookPitch, 0, returnSpeed * Time.deltaTime);
-        }
-
-        // Применяем позицию и поворот
-        if (isFirstPerson)
-        {
-            UpdateFirstPerson();
-        }
-        else
-        {
-            UpdateThirdPerson(isFreeLook);
+            UpdateTransition();
         }
     }
 
-    void UpdateThirdPerson(bool isFreeLook)
+    void StartTransition()
     {
-        // Вычисляем поворот
+        isTransitioning = true;
+        transitionProgress = 0f;
+        transitionStartPos = transform.position;
+        transitionStartRot = transform.rotation;
+        isFirstPerson = !isFirstPerson;
+    }
+
+    void UpdateTransition()
+    {
+        transitionProgress += Time.deltaTime * switchSpeed;
+
+        Vector3 targetPos;
+        Quaternion targetRot;
+
+        if (isFirstPerson)
+        {
+            // Переход В первое лицо
+            targetPos = GetFirstPersonPosition();
+            targetRot = Quaternion.Euler(pitch, yaw, 0);
+        }
+        else
+        {
+            // Переход В третье лицо - НЕ используем LookAt в конце
+            targetPos = GetThirdPersonTargetPosition();
+            Vector3 lookTarget = GetLookTarget();
+            targetRot = Quaternion.LookRotation(lookTarget - targetPos);
+        }
+
+        // Плавная интерполяция
+        float t = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(transitionProgress));
+
+        // Если переход почти завершён — просто ставим в целевую позицию
+        if (transitionProgress >= 1f)
+        {
+            transform.position = targetPos;
+            transform.rotation = targetRot;
+            isTransitioning = false;
+        }
+        else
+        {
+            transform.position = Vector3.Lerp(transitionStartPos, targetPos, t);
+            transform.rotation = Quaternion.Slerp(transitionStartRot, targetRot, t);
+        }
+    }
+
+    Vector3 GetLookTarget()
+    {
+        return player.position + Vector3.up * 1.5f;
+    }
+
+    Vector3 GetFirstPersonPosition()
+    {
+        if (headPosition != null)
+            return headPosition.position;
+        else
+            return player.position + firstPersonOffset;
+    }
+
+    Vector3 GetThirdPersonTargetPosition()
+    {
         float targetYaw = yaw + freeLookYaw;
         float targetPitch = pitch + freeLookPitch;
         Quaternion rotation = Quaternion.Euler(targetPitch, targetYaw, 0);
 
-        // Базовая позиция камеры
-        Vector3 desiredPosition = player.position + rotation * thirdPersonOffset;
+        Vector3 zoomedOffset = thirdPersonOffset.normalized * currentZoom;
+        Vector3 desiredPosition = player.position + rotation * zoomedOffset;
 
-        // Raycast для проверки коллизий камеры
-        Vector3 cameraPosition = CheckCameraCollision(player.position, desiredPosition);
+        return CheckCameraCollision(player.position, desiredPosition);
+    }
 
-        // Плавное движение камеры
-        transform.position = Vector3.Lerp(transform.position, cameraPosition, thirdPersonSmooth * Time.deltaTime);
+    void UpdateThirdPerson()
+    {
+        Vector3 targetPos = GetThirdPersonTargetPosition();
+        transform.position = Vector3.Lerp(transform.position, targetPos, thirdPersonSmooth * Time.deltaTime);
 
-        // Смотрим на игрока
-        Vector3 lookTarget = player.position + Vector3.up * 1.5f;
+        Vector3 lookTarget = GetLookTarget();
         transform.LookAt(lookTarget);
+    }
+
+    void UpdateFirstPerson()
+    {
+        transform.position = GetFirstPersonPosition();
+        transform.rotation = Quaternion.Euler(pitch, yaw, 0);
     }
 
     Vector3 CheckCameraCollision(Vector3 from, Vector3 to)
     {
         Vector3 direction = (to - from).normalized;
-        float maxDistance = Vector3.Distance(from, to);
+        float maxDist = Vector3.Distance(from, to);
 
+        // Основной луч
         RaycastHit hit;
-
-        // Пускаем луч от игрока к желаемой позиции камеры
-        if (Physics.Raycast(from, direction, out hit, maxDistance, cameraCollisionLayers))
+        if (Physics.Raycast(from, direction, out hit, maxDist, cameraCollisionLayers))
         {
-            // Если попали в препятствие, отодвигаем камеру
-            float hitDistance = hit.distance;
-            float targetDistance = Mathf.Max(hitDistance - 0.3f, minDistance); // Отступ 0.3 от стены
-            Vector3 newPosition = from + direction * targetDistance;
+            float targetDist = Mathf.Max(hit.distance - collisionOffset, minDistance);
+            Vector3 newPosition = from + direction * targetDist;
 
-            // Визуализация для отладки
+            // Дополнительная проверка: сфера вокруг новой позиции
+            // чтобы камера не застревала в геометрии
+            float sphereRadius = 0.3f;
+            Collider[] colliders = Physics.OverlapSphere(newPosition, sphereRadius, cameraCollisionLayers);
+
+            if (colliders.Length > 0)
+            {
+                // Если есть коллизии — отодвигаем ещё ближе к игроку
+                float extraPush = sphereRadius + collisionOffset;
+                newPosition = from + direction * Mathf.Max(targetDist - extraPush, minDistance);
+            }
+
             Debug.DrawLine(from, hit.point, Color.red);
-            Debug.DrawRay(from, direction * targetDistance, Color.green);
+            Debug.DrawRay(newPosition, Vector3.up * 0.5f, Color.green);
 
             return newPosition;
         }
 
-        // Если препятствий нет, возвращаем желаемую позицию
-        Debug.DrawRay(from, direction * maxDistance, Color.green);
+        Debug.DrawRay(from, direction * maxDist, Color.green);
         return to;
     }
 
-    void UpdateFirstPerson()
-    {
-        // Позиция камеры у головы с проверкой коллизий
-        if (headPosition != null)
-        {
-            transform.position = headPosition.position;
-        }
-        else
-        {
-            transform.position = player.position + firstPersonOffset;
-        }
-
-        // Поворот
-        transform.rotation = Quaternion.Euler(pitch, yaw, 0);
-    }
-
-    // Для отладки
     void OnDrawGizmosSelected()
     {
         if (player != null)
         {
-            Gizmos.color = Color.blue;
-            Gizmos.DrawWireSphere(player.position + thirdPersonOffset, 0.3f);
+            // Показываем целевую позицию
+            Gizmos.color = Color.green;
+            Vector3 target = GetThirdPersonTargetPosition();
+            Gizmos.DrawWireSphere(target, 0.2f);
+            Gizmos.DrawLine(player.position, target);
 
-            // Показываем минимальную дистанцию
-            Gizmos.color = Color.red;
-            Gizmos.DrawWireSphere(player.position, minDistance);
+            // Показываем сферу проверки коллизий
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawWireSphere(target, 0.3f);
+
+            // Показываем точку взгляда
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawWireSphere(GetLookTarget(), 0.15f);
         }
     }
 }

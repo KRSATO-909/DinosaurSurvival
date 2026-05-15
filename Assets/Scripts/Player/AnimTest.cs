@@ -1,5 +1,4 @@
-using UnityEngine;
-using System.Collections;
+п»їusing UnityEngine;
 
 [RequireComponent(typeof(Animator))]
 public class AnimationController : MonoBehaviour
@@ -8,27 +7,25 @@ public class AnimationController : MonoBehaviour
     private Animator animator;
     private PlayerMovement movement;
 
-    [Header("Idle Settings")]
-    [SerializeField] private float minIdleTime = 3f;
-    [SerializeField] private float maxIdleTime = 6f;
-    [SerializeField] private string[] idleAnimations = { "Idle1", "Idle2" }; // Имена состояний
+    [Header("Idle Animations")]
+    [SerializeField] private string[] idleAnimations = { "Idle1", "Idle2" };
 
-    [Header("Attack Settings")]
-    [SerializeField] private string[] attackAnimations = { "Bite1", "Bite2" }; // Имена состояний
+    [Header("Attack Animations")]
+    [SerializeField] private string[] attackAnimations = { "Bite1", "Bite2" };
+    [SerializeField] private float attackMoveSpeedMultiplier = 0.5f;
 
-    private float idleTimer;
-    private float currentIdleTime;
     private string currentIdleAnim;
     private bool isAttacking;
+    private bool waitingForNextIdle;
+    private float attackEndTime;
 
     void Start()
     {
         animator = GetComponent<Animator>();
         movement = GetComponent<PlayerMovement>();
 
-        // Начинаем с первой идл анимации
-        currentIdleAnim = idleAnimations[0];
-        SetRandomIdleTime();
+        currentIdleAnim = idleAnimations[Random.Range(0, idleAnimations.Length)];
+        animator.Play(currentIdleAnim, 0, 0f);
     }
 
     void Update()
@@ -38,32 +35,39 @@ public class AnimationController : MonoBehaviour
         HandleMovementAnimations();
         HandleIdleAnimations();
         HandleAttackAnimations();
+
+        movement.SetAttacking(isAttacking);
+        movement.SetSpeedMultiplier(isAttacking ? attackMoveSpeedMultiplier : 1f);
     }
 
     void HandleMovementAnimations()
     {
         float speed = 0f;
-
         if (movement.IsMoving())
-        {
             speed = movement.IsSprinting() ? 2f : 1f;
-        }
 
-        animator.SetFloat("Speed", speed);
+        float currentSpeed = animator.GetFloat("Speed");
+        float newSpeed = Mathf.Lerp(currentSpeed, speed, Time.deltaTime * 10f);
+        animator.SetFloat("Speed", newSpeed);
     }
 
     void HandleIdleAnimations()
     {
-        // Меняем идл только если стоим и не атакуем
         if (animator.GetFloat("Speed") > 0.1f || isAttacking)
         {
-            idleTimer = 0f;
+            waitingForNextIdle = true;
             return;
         }
 
-        idleTimer += Time.deltaTime;
+        if (waitingForNextIdle)
+        {
+            PlayRandomIdle();
+            waitingForNextIdle = false;
+            return;
+        }
 
-        if (idleTimer >= currentIdleTime)
+        AnimatorStateInfo stateInfo = animator.GetCurrentAnimatorStateInfo(0);
+        if (IsIdleAnimation(stateInfo) && stateInfo.normalizedTime >= 1f)
         {
             PlayRandomIdle();
         }
@@ -71,75 +75,72 @@ public class AnimationController : MonoBehaviour
 
     void HandleAttackAnimations()
     {
-        if (Input.GetMouseButtonDown(0) && !isAttacking)
+        // РџСЂРѕРІРµСЂСЏРµРј Р°С‚Р°РєСѓ С‡РµСЂРµР· movement.CanAttack()
+        if (Input.GetMouseButtonDown(0) && !isAttacking && movement.CanAttack())
         {
             PerformAttack();
         }
 
-        // Проверяем окончание атаки
         if (isAttacking)
         {
             AnimatorStateInfo stateInfo = animator.GetCurrentAnimatorStateInfo(0);
 
-            // Проверяем что это анимация атаки и она почти закончилась
-            bool isAttackAnim = false;
-            foreach (string attackAnim in attackAnimations)
-            {
-                if (stateInfo.IsName(attackAnim))
-                {
-                    isAttackAnim = true;
-                    break;
-                }
-            }
-
-            if (isAttackAnim && stateInfo.normalizedTime >= 0.9f)
+            if (IsAttackAnimation(stateInfo) && stateInfo.normalizedTime >= 0.95f)
             {
                 isAttacking = false;
+                waitingForNextIdle = true;
+            }
+
+            if (Time.time > attackEndTime)
+            {
+                isAttacking = false;
+                waitingForNextIdle = true;
             }
         }
     }
 
     void PlayRandomIdle()
     {
-        // Выбираем случайную идл анимацию, но не ту же самую
-        string newIdle;
-        do
-        {
-            newIdle = idleAnimations[Random.Range(0, idleAnimations.Length)];
-        } while (newIdle == currentIdleAnim && idleAnimations.Length > 1);
-
-        currentIdleAnim = newIdle;
-
-        // Проигрываем выбранную анимацию
+        currentIdleAnim = idleAnimations[Random.Range(0, idleAnimations.Length)];
         animator.Play(currentIdleAnim, 0, 0f);
-
-        // Сбрасываем таймер
-        SetRandomIdleTime();
-        idleTimer = 0f;
     }
 
     void PerformAttack()
     {
-        if (isAttacking) return;
-
-        // Выбираем случайную атаку
         string attackAnim = attackAnimations[Random.Range(0, attackAnimations.Length)];
 
-        // Устанавливаем триггер и проигрываем
-        animator.SetTrigger("Attack");
-        animator.Play(attackAnim, 0, 0f);
+        // РЎРѕРѕР±С‰Р°РµРј РґРІРёР¶РµРЅРёСЋ С‡С‚Рѕ Р°С‚Р°РєР° РЅР°С‡Р°Р»Р°СЃСЊ (РґР»СЏ РєСѓР»РґР°СѓРЅР°)
+        movement.OnAttackStarted();
 
+        float animLength = 0.5f;
+        foreach (AnimationClip clip in animator.runtimeAnimatorController.animationClips)
+        {
+            if (clip.name == attackAnim)
+            {
+                animLength = clip.length;
+                break;
+            }
+        }
+
+        attackEndTime = Time.time + animLength + 0.3f;
+
+        animator.Play(attackAnim, 0, 0f);
         isAttacking = true;
     }
 
-    void SetRandomIdleTime()
+    bool IsIdleAnimation(AnimatorStateInfo stateInfo)
     {
-        currentIdleTime = Random.Range(minIdleTime, maxIdleTime);
+        foreach (string idle in idleAnimations)
+            if (stateInfo.IsName(idle)) return true;
+        return false;
     }
 
-    // Публичные методы
-    public bool IsAttacking()
+    bool IsAttackAnimation(AnimatorStateInfo stateInfo)
     {
-        return isAttacking;
+        foreach (string attack in attackAnimations)
+            if (stateInfo.IsName(attack)) return true;
+        return false;
     }
+
+    public bool IsAttacking() => isAttacking;
 }
