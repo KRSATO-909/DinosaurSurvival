@@ -6,6 +6,7 @@ public class AnimationController : MonoBehaviour
     [Header("References")]
     private Animator animator;
     private PlayerMovement movement;
+    private FlyingSystem flying;
 
     [Header("Idle Animations")]
     [SerializeField] private string[] idleAnimations = { "Idle1", "Idle2" };
@@ -14,15 +15,23 @@ public class AnimationController : MonoBehaviour
     [SerializeField] private string[] attackAnimations = { "Bite1", "Bite2" };
     [SerializeField] private float attackMoveSpeedMultiplier = 0.5f;
 
+    [Header("Flight Idle Animations")]
+    [SerializeField] private string[] flightIdleAnimations = { "FlightIdle1", "FlightIdle2" };
+
+    [Header("Flight Attack Animations")]
+    [SerializeField] private string[] flightAttackAnimations = { "FlightBite1", "FlightBite2" };
+
     private string currentIdleAnim;
     private bool isAttacking;
     private bool waitingForNextIdle;
     private float attackEndTime;
+    private bool wasFlyingLastFrame;
 
     void Start()
     {
         animator = GetComponent<Animator>();
         movement = GetComponent<PlayerMovement>();
+        flying = GetComponent<FlyingSystem>();
 
         currentIdleAnim = idleAnimations[Random.Range(0, idleAnimations.Length)];
         animator.Play(currentIdleAnim, 0, 0f);
@@ -30,30 +39,49 @@ public class AnimationController : MonoBehaviour
 
     void Update()
     {
-        if (movement == null || animator == null) return;
+        if (animator == null) return;
 
         HandleMovementAnimations();
         HandleIdleAnimations();
         HandleAttackAnimations();
 
-        movement.SetAttacking(isAttacking);
-        movement.SetSpeedMultiplier(isAttacking ? attackMoveSpeedMultiplier : 1f);
+        // Замедление при атаке
+        if (movement != null)
+        {
+            movement.SetAttacking(isAttacking);
+            movement.SetSpeedMultiplier(isAttacking ? attackMoveSpeedMultiplier : 1f);
+        }
     }
 
     void HandleMovementAnimations()
     {
         float speed = 0f;
-        if (movement.IsMoving())
+
+        bool isFlying = flying != null && flying.IsFlying();
+
+        if (!isFlying && movement != null && movement.enabled && movement.IsMoving())
+        {
             speed = movement.IsSprinting() ? 2f : 1f;
+        }
 
         float currentSpeed = animator.GetFloat("Speed");
         float newSpeed = Mathf.Lerp(currentSpeed, speed, Time.deltaTime * 10f);
         animator.SetFloat("Speed", newSpeed);
+
+        // Сброс идла при смене режима
+        if (isFlying != wasFlyingLastFrame)
+        {
+            waitingForNextIdle = true;
+        }
+        wasFlyingLastFrame = isFlying;
     }
 
     void HandleIdleAnimations()
     {
-        if (animator.GetFloat("Speed") > 0.1f || isAttacking)
+        bool isFlying = flying != null && flying.IsFlying();
+        bool isMoving = animator.GetFloat("Speed") > 0.1f;
+
+        if (isMoving || isAttacking)
         {
             waitingForNextIdle = true;
             return;
@@ -61,31 +89,53 @@ public class AnimationController : MonoBehaviour
 
         if (waitingForNextIdle)
         {
-            PlayRandomIdle();
+            PlayRandomIdle(isFlying);
             waitingForNextIdle = false;
             return;
         }
 
         AnimatorStateInfo stateInfo = animator.GetCurrentAnimatorStateInfo(0);
-        if (IsIdleAnimation(stateInfo) && stateInfo.normalizedTime >= 1f)
+
+        // Проверяем что текущая анимация из нужного набора и она закончилась
+        string[] currentSet = isFlying ? flightIdleAnimations : idleAnimations;
+        bool isInCurrentSet = false;
+        foreach (string anim in currentSet)
         {
-            PlayRandomIdle();
+            if (stateInfo.IsName(anim))
+            {
+                isInCurrentSet = true;
+                break;
+            }
+        }
+
+        if (isInCurrentSet && stateInfo.normalizedTime >= 1f)
+        {
+            PlayRandomIdle(isFlying);
+        }
+        else if (!isInCurrentSet)
+        {
+            // Если мы не в идл анимации нужного типа — переключаем
+            PlayRandomIdle(isFlying);
         }
     }
 
     void HandleAttackAnimations()
     {
-        // Проверяем атаку через movement.CanAttack()
-        if (Input.GetMouseButtonDown(0) && !isAttacking && movement.CanAttack())
+        bool canAttack = movement != null && movement.CanAttack();
+        bool isFlying = flying != null && flying.IsFlying();
+
+        if (Input.GetMouseButtonDown(0) && !isAttacking && canAttack)
         {
-            PerformAttack();
+            PerformAttack(isFlying);
         }
 
         if (isAttacking)
         {
             AnimatorStateInfo stateInfo = animator.GetCurrentAnimatorStateInfo(0);
 
-            if (IsAttackAnimation(stateInfo) && stateInfo.normalizedTime >= 0.95f)
+            bool isInAttack = IsAttackAnimation(stateInfo, isFlying);
+
+            if (isInAttack && stateInfo.normalizedTime >= 0.95f)
             {
                 isAttacking = false;
                 waitingForNextIdle = true;
@@ -99,18 +149,26 @@ public class AnimationController : MonoBehaviour
         }
     }
 
-    void PlayRandomIdle()
+    void PlayRandomIdle(bool isFlying)
     {
-        currentIdleAnim = idleAnimations[Random.Range(0, idleAnimations.Length)];
+        string[] animations = isFlying ? flightIdleAnimations : idleAnimations;
+
+        if (animations.Length == 0) return;
+
+        currentIdleAnim = animations[Random.Range(0, animations.Length)];
         animator.Play(currentIdleAnim, 0, 0f);
     }
 
-    void PerformAttack()
+    void PerformAttack(bool isFlying)
     {
-        string attackAnim = attackAnimations[Random.Range(0, attackAnimations.Length)];
+        string[] animations = isFlying ? flightAttackAnimations : attackAnimations;
 
-        // Сообщаем движению что атака началась (для кулдауна)
-        movement.OnAttackStarted();
+        if (animations.Length == 0) return;
+
+        string attackAnim = animations[Random.Range(0, animations.Length)];
+
+        if (movement != null)
+            movement.OnAttackStarted();
 
         float animLength = 0.5f;
         foreach (AnimationClip clip in animator.runtimeAnimatorController.animationClips)
@@ -123,7 +181,6 @@ public class AnimationController : MonoBehaviour
         }
 
         attackEndTime = Time.time + animLength + 0.3f;
-
         animator.Play(attackAnim, 0, 0f);
         isAttacking = true;
     }
@@ -132,12 +189,15 @@ public class AnimationController : MonoBehaviour
     {
         foreach (string idle in idleAnimations)
             if (stateInfo.IsName(idle)) return true;
+        foreach (string idle in flightIdleAnimations)
+            if (stateInfo.IsName(idle)) return true;
         return false;
     }
 
-    bool IsAttackAnimation(AnimatorStateInfo stateInfo)
+    bool IsAttackAnimation(AnimatorStateInfo stateInfo, bool isFlying)
     {
-        foreach (string attack in attackAnimations)
+        string[] animations = isFlying ? flightAttackAnimations : attackAnimations;
+        foreach (string attack in animations)
             if (stateInfo.IsName(attack)) return true;
         return false;
     }

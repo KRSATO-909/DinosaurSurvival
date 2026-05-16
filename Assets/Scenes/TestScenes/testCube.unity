@@ -628,6 +628,8 @@ MonoBehaviour:
   - Bite1
   - Bite2
   attackMoveSpeedMultiplier: 0.5
+  flightIdleAnimations: []
+  flightAttackAnimations: []
 --- !u!95 &928101226
 Animator:
   serializedVersion: 7
