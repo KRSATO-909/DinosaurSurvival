@@ -167,7 +167,7 @@ public class PlayerMovement : MonoBehaviour
 
     void PerformAttackDamage()
     {
-        Debug.Log("Укус!");
+        //Debug.Log("Укус!");
 
         Collider[] hits = Physics.OverlapSphere(attackPoint.position, attackRange);
         foreach (Collider hit in hits)
