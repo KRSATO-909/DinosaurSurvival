@@ -67,6 +67,10 @@ public class MouseLook : MonoBehaviour
 
     void LateUpdate()
     {
+
+        // Если игра на паузе – не обрабатываем камеру
+        if (Time.timeScale == 0f) return;
+
         if (player == null) return;
 
         // Переключение камеры

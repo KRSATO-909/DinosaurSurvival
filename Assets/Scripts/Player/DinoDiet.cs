@@ -1,13 +1,13 @@
-using UnityEngine;
+п»їusing UnityEngine;
 using System.Collections.Generic;
 
 public enum DinoDietType
 {
-    Carnivore,   // Плотоядный (мясо, рыба, падаль)
-    Herbivore,   // Травоядный (трава)
-    Omnivore,    // Всеядный (всё)
-    Piscivore,   // Рыбоядный (рыба, моллюски)
-    Insectivore  // Насекомоядный (насекомые)
+    Carnivore,   // РџР»РѕС‚РѕСЏРґРЅС‹Р№ (РјСЏСЃРѕ, РїР°РґР°Р»СЊ)
+    Herbivore,   // РўСЂР°РІРѕСЏРґРЅС‹Р№ (С‚СЂР°РІР°)
+    Omnivore,    // Р’СЃРµСЏРґРЅС‹Р№ (РІСЃС‘)
+    Piscivore,   // Р С‹Р±РѕСЏРґРЅС‹Р№ (СЂС‹Р±Р°, РјРѕР»Р»СЋСЃРєРё)
+    Insectivore  // РќР°СЃРµРєРѕРјРѕСЏРґРЅС‹Р№ (РЅР°СЃРµРєРѕРјС‹Рµ)
 }
 
 public class DinoDiet : MonoBehaviour
@@ -16,9 +16,10 @@ public class DinoDiet : MonoBehaviour
     [SerializeField] private DinoDietType dietType = DinoDietType.Carnivore;
 
     [Header("Custom Edible Types")]
-    [Tooltip("Если не указано — используются стандартные для типа")]
+    [Tooltip("Р•СЃР»Рё РѕСЃС‚Р°РІРёС‚СЊ РїСѓСЃС‚С‹Рј вЂ“ Р±СѓРґСѓС‚ РёСЃРїРѕР»СЊР·РѕРІР°РЅС‹ СЃС‚Р°РЅРґР°СЂС‚РЅС‹Рµ С‚РёРїС‹ РґР»СЏ РІС‹Р±СЂР°РЅРЅРѕРіРѕ СЂРµР¶РёРјР°.")]
     [SerializeField] private List<FoodType> customEdibleFoods = new List<FoodType>();
 
+    // РЎС‚Р°РЅРґР°СЂС‚РЅС‹Рµ СЂР°С†РёРѕРЅС‹
     private Dictionary<DinoDietType, FoodType[]> standardDiet = new Dictionary<DinoDietType, FoodType[]>()
     {
         { DinoDietType.Carnivore, new FoodType[] { FoodType.Meat, FoodType.Carrion } },
@@ -30,18 +31,21 @@ public class DinoDiet : MonoBehaviour
 
     public DinoDietType DietType => dietType;
 
-    void Start()
+    /// <summary>
+    /// Р’РѕР·РІСЂР°С‰Р°РµС‚ Р°РєС‚СѓР°Р»СЊРЅС‹Р№ СЃРїРёСЃРѕРє СЃСЉРµРґРѕР±РЅС‹С… С‚РёРїРѕРІ: РєР°СЃС‚РѕРјРЅС‹Р№, РµСЃР»Рё РѕРЅ РЅРµ РїСѓСЃС‚, РёРЅР°С‡Рµ СЃС‚Р°РЅРґР°СЂС‚РЅС‹Р№.
+    /// </summary>
+    private List<FoodType> GetEffectiveFoodList()
     {
-        // Если нет кастомных — используем стандартные
-        if (customEdibleFoods.Count == 0)
-        {
-            customEdibleFoods = new List<FoodType>(standardDiet[dietType]);
-        }
+        if (customEdibleFoods != null && customEdibleFoods.Count > 0)
+            return customEdibleFoods;
+        else
+            return new List<FoodType>(standardDiet[dietType]);
     }
 
     public bool CanEat(FoodType foodType)
     {
-        return customEdibleFoods.Contains(foodType);
+        bool can = GetEffectiveFoodList().Contains(foodType);
+        return can;
     }
 
     public bool CanEat(FoodSource food)
@@ -51,14 +55,13 @@ public class DinoDiet : MonoBehaviour
 
     public List<FoodType> GetEdibleFoods()
     {
-        return customEdibleFoods;
+        return GetEffectiveFoodList();
     }
 
-    // Для отладки
     public string GetDietDescription()
     {
         string foods = "";
-        foreach (FoodType food in customEdibleFoods)
+        foreach (FoodType food in GetEffectiveFoodList())
         {
             foods += food.ToString() + ", ";
         }

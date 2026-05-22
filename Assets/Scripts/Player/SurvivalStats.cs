@@ -38,7 +38,6 @@ public class SurvivalStats : MonoBehaviour
     {
         // Истощение
         DepleteStats();
-        Debug.Log($"{currentHunger}, {currentThirst}, {currentHealth}");
 
         // Регенерация
         RegenerateHealth();

@@ -1,18 +1,36 @@
-using UnityEngine;
+п»їusing UnityEngine;
 using System.Collections.Generic;
 
 public class InteractionSystem : MonoBehaviour
 {
-    [Header("Interaction Settings")]
-    [SerializeField] private KeyCode interactKey = KeyCode.E;
-    [SerializeField] private float autoDetectRadius = 10f; // Авто-поиск в радиусе
+    [Header("Interaction Keys")]
+    [SerializeField] private KeyCode interactKey = KeyCode.E;   // РЎСЉРµСЃС‚СЊ/РїРѕРїРёС‚СЊ
+    [SerializeField] private KeyCode scentKey = KeyCode.R;     // РќСЋС…
+
+    [Header("Scent Settings")]
+    [SerializeField] private float autoDetectRadius = 10f;
+    [SerializeField] private LayerMask interactableLayers = ~0;
+    [SerializeField] private float scentDuration = 4f;          // Р”Р»РёС‚РµР»СЊРЅРѕСЃС‚СЊ РЅСЋС…Р°
+    [SerializeField] private float scentCooldown = 8f;          // РљСѓР»РґР°СѓРЅ РјРµР¶РґСѓ РЅСЋС…Р°РјРё
+    [SerializeField] private Material rayMaterial;
 
     private SurvivalStats survival;
     private DinoDiet diet;
 
-    // Списки для кеширования
     private List<FoodSource> nearbyFood = new List<FoodSource>();
     private List<WaterSource> nearbyWater = new List<WaterSource>();
+
+    private FoodSource bestFood;
+    private WaterSource bestWater;
+
+    // Р›СѓС‡Рё РЅСЋС…Р°
+    private List<LineRenderer> activeRays = new List<LineRenderer>();
+    private List<Component> rayTargets = new List<Component>();
+
+    // РўР°Р№РјРµСЂС‹ РЅСЋС…Р°
+    private bool scentActive = false;
+    private float scentTimer = 0f;
+    private float scentCooldownTimer = 0f;
 
     void Start()
     {
@@ -22,50 +40,47 @@ public class InteractionSystem : MonoBehaviour
 
     void Update()
     {
+        // РћР±РЅРѕРІР»РµРЅРёРµ С‚Р°Р№РјРµСЂРѕРІ РЅСЋС…Р°
+        if (scentActive)
+        {
+            scentTimer -= Time.deltaTime;
+            if (scentTimer <= 0f)
+            {
+                scentActive = false;
+                ClearScentRays();
+            }
+        }
+        if (scentCooldownTimer > 0f && !scentActive)
+            scentCooldownTimer -= Time.deltaTime;
+
+        // РЎРєР°РЅРёСЂРѕРІР°РЅРёРµ РѕРєСЂСѓР¶РµРЅРёСЏ
+        ScanNearby();
+
+        // Р’РєР»СЋС‡РµРЅРёРµ/РІС‹РєР»СЋС‡РµРЅРёРµ РЅСЋС…Р°
+        if (Input.GetKeyDown(scentKey))
+        {
+            if (!scentActive && scentCooldownTimer <= 0f)
+            {
+                StartScent();
+            }
+        }
+
+        // РћР±РЅРѕРІР»РµРЅРёРµ Р»СѓС‡РµР№ (С‚РѕР»СЊРєРѕ РїСЂРё Р°РєС‚РёРІРЅРѕРј РЅСЋС…Рµ)
+        if (scentActive)
+            UpdateScentRays();
+        else
+            ClearScentRays();
+
+        // Р’Р·Р°РёРјРѕРґРµР№СЃС‚РІРёРµ СЃ РѕР±СЉРµРєС‚РѕРј
         if (Input.GetKeyDown(interactKey))
         {
             TryInteract();
         }
     }
 
-    void TryInteract()
+    void ScanNearby()
     {
-        // Собираем ближайшие объекты
-        FindNearbyObjects();
-
-        // Ищем ближайшую еду
-        FoodSource bestFood = FindBestFood();
-        if (bestFood != null)
-        {
-            if (diet == null || diet.CanEat(bestFood))
-            {
-                survival?.Eat(bestFood);
-                Debug.Log($"Съедено: {bestFood.Type} (+{bestFood.FoodValue})");
-                return;
-            }
-            else
-            {
-                Debug.Log($"Не могу есть {bestFood.Type} (диета: {diet.DietType})");
-            }
-        }
-
-        // Ищем ближайшую воду
-        WaterSource bestWater = FindBestWater();
-        if (bestWater != null)
-        {
-            survival?.Drink(bestWater);
-            Debug.Log($"Выпита вода (+{bestWater.WaterValue})");
-            return;
-        }
-
-        Debug.Log("Нет доступной еды или воды поблизости");
-    }
-
-    void FindNearbyObjects()
-    {
-        // Ищем все источники в радиусе
-        Collider[] colliders = Physics.OverlapSphere(transform.position, autoDetectRadius);
-
+        Collider[] colliders = Physics.OverlapSphere(transform.position, autoDetectRadius, interactableLayers);
         nearbyFood.Clear();
         nearbyWater.Clear();
 
@@ -79,23 +94,24 @@ public class InteractionSystem : MonoBehaviour
             if (water != null && water.IsAvailable)
                 nearbyWater.Add(water);
         }
+
+        bestFood = FindBestFood();
+        bestWater = FindBestWater();
     }
 
     FoodSource FindBestFood()
     {
         FoodSource best = null;
         float minDist = float.MaxValue;
-
         foreach (FoodSource food in nearbyFood)
         {
             float dist = Vector3.Distance(transform.position, food.transform.position);
-            if (dist < food.InteractionRadius && dist < minDist)
+            if (dist < minDist && dist <= food.InteractionRadius)
             {
                 minDist = dist;
                 best = food;
             }
         }
-
         return best;
     }
 
@@ -103,7 +119,6 @@ public class InteractionSystem : MonoBehaviour
     {
         WaterSource best = null;
         float minDist = float.MaxValue;
-
         foreach (WaterSource water in nearbyWater)
         {
             if (water.IsInRange(transform.position))
@@ -116,32 +131,138 @@ public class InteractionSystem : MonoBehaviour
                 }
             }
         }
-
         return best;
     }
 
-    // Показываем подсказку на GUI
+    void TryInteract()
+    {
+        if (bestFood != null && diet != null && diet.CanEat(bestFood))
+        {
+            survival?.Eat(bestFood);
+            Debug.Log($"РЎСЉРµРґРµРЅРѕ: {bestFood.Type} (+{bestFood.FoodValue})");
+            return;
+        }
+        if (bestWater != null)
+        {
+            survival?.Drink(bestWater);
+            Debug.Log($"Р’С‹РїРёС‚Р° РІРѕРґР° (+{bestWater.WaterValue})");
+            return;
+        }
+    }
+
+    void StartScent()
+    {
+        scentActive = true;
+        scentTimer = scentDuration;
+        scentCooldownTimer = scentCooldown;
+        Debug.Log("[Scent] РќСЋС… Р°РєС‚РёРІРёСЂРѕРІР°РЅ");
+    }
+
+    void UpdateScentRays()
+    {
+        // РЎРѕР±РёСЂР°РµРј РІСЃРµ РїРѕРґС…РѕРґСЏС‰РёРµ С†РµР»Рё
+        List<Component> targets = new List<Component>();
+        foreach (FoodSource food in nearbyFood)
+        {
+            if (diet != null && diet.CanEat(food))
+                targets.Add(food);
+        }
+        foreach (WaterSource water in nearbyWater)
+        {
+            targets.Add(water);
+        }
+
+        // РџРѕРґРіРѕРЅСЏРµРј РєРѕР»РёС‡РµСЃС‚РІРѕ Р»СѓС‡РµР№
+        while (activeRays.Count > targets.Count)
+        {
+            Destroy(activeRays[activeRays.Count - 1].gameObject);
+            activeRays.RemoveAt(activeRays.Count - 1);
+            rayTargets.RemoveAt(rayTargets.Count - 1);
+        }
+        while (activeRays.Count < targets.Count)
+        {
+            GameObject lineObj = new GameObject("ScentRay");
+            lineObj.transform.parent = transform;
+            LineRenderer lr = lineObj.AddComponent<LineRenderer>();
+            lr.material = rayMaterial != null ? rayMaterial : new Material(Shader.Find("Sprites/Default"));
+            lr.startWidth = 0.05f;
+            lr.endWidth = 0.02f;
+            lr.positionCount = 2;
+            activeRays.Add(lr);
+            rayTargets.Add(null);
+        }
+
+        // РћР±РЅРѕРІР»СЏРµРј Р»СѓС‡Рё
+        for (int i = 0; i < targets.Count; i++)
+        {
+            LineRenderer lr = activeRays[i];
+            lr.enabled = true;
+            rayTargets[i] = targets[i];
+
+            Vector3 start = transform.position + Vector3.up * 0.5f;
+            Vector3 end = targets[i].transform.position;
+
+            lr.SetPosition(0, start);
+            lr.SetPosition(1, end);
+
+            if (targets[i] is FoodSource food)
+                lr.startColor = lr.endColor = GetFoodColor(food.Type);
+            else if (targets[i] is WaterSource)
+                lr.startColor = lr.endColor = Color.blue;
+        }
+    }
+
+    void ClearScentRays()
+    {
+        foreach (LineRenderer lr in activeRays)
+        {
+            if (lr != null) lr.enabled = false;
+        }
+    }
+
+    Color GetFoodColor(FoodType type)
+    {
+        switch (type)
+        {
+            case FoodType.Meat: return Color.red;
+            case FoodType.Grass: return Color.green;
+            case FoodType.Fish: return Color.cyan;
+            case FoodType.Insect: return Color.yellow;
+            case FoodType.Mollusk: return Color.magenta;
+            case FoodType.Carrion: return new Color(0.5f, 0.2f, 0.2f);
+            default: return Color.white;
+        }
+    }
+
     void OnGUI()
     {
-        FindNearbyObjects();
-
-        FoodSource bestFood = FindBestFood();
-        WaterSource bestWater = FindBestWater();
+        // Р•СЃР»Рё РїРѕРґСЃРєР°Р·РєРё РѕС‚РєР»СЋС‡РµРЅС‹ РІ РЅР°СЃС‚СЂРѕР№РєР°С… вЂ“ РЅРёС‡РµРіРѕ РЅРµ СЂРёСЃСѓРµРј
+        if (GameManager.Instance == null || !GameManager.Instance.showHints)
+            return;
 
         string hint = "";
-
-        if (bestFood != null && (diet == null || diet.CanEat(bestFood)))
-        {
-            hint = $"Нажми E чтобы съесть {bestFood.Type}";
-        }
+        if (bestFood != null && diet != null && diet.CanEat(bestFood))
+            hint = $"РќР°Р¶РјРё E, С‡С‚РѕР±С‹ СЃСЉРµСЃС‚СЊ {bestFood.Type}";
         else if (bestWater != null)
-        {
-            hint = "Нажми E чтобы выпить воды";
-        }
+            hint = "РќР°Р¶РјРё E, С‡С‚РѕР±С‹ РІС‹РїРёС‚СЊ РІРѕРґС‹";
 
         if (!string.IsNullOrEmpty(hint))
         {
-            GUI.Label(new Rect(Screen.width / 2 - 100, Screen.height / 2 + 50, 200, 30), hint);
+            GUI.Label(new Rect(Screen.width / 2 - 120, Screen.height / 2 + 60, 240, 30), hint);
+        }
+
+        // РћС‚РѕР±СЂР°Р¶РµРЅРёРµ С‚Р°Р№РјРµСЂР° РЅСЋС…Р°
+        if (scentActive)
+        {
+            GUI.Label(new Rect(Screen.width / 2 - 60, Screen.height / 2 + 80, 120, 30), $"РќСЋС…: {scentTimer:F1}СЃ");
+        }
+        else if (scentCooldownTimer > 0f)
+        {
+            GUI.Label(new Rect(Screen.width / 2 - 60, Screen.height / 2 + 80, 120, 30), $"РџРµСЂРµР·Р°СЂСЏРґРєР°: {scentCooldownTimer:F1}СЃ");
+        }
+        else
+        {
+            GUI.Label(new Rect(Screen.width / 2 - 60, Screen.height / 2 + 80, 120, 30), "РќР°Р¶РјРё R РґР»СЏ РЅСЋС…Р°");
         }
     }
 

@@ -18,12 +18,12 @@ public class FlyingSystem : MonoBehaviour
     [SerializeField] private float verticalSpeed = 5f;
     [SerializeField] private float verticalDamping = 4f;
 
+    private WaterBody[] allWaters;
+    private float waterCheckTimer = 0f;
+
     private CharacterController controller;
     private PlayerMovement groundMovement;
     private Animator animator;
-    private Transform groundCheck;
-    private LayerMask groundLayer;
-    private float groundCheckRadius;
 
     private enum FlightState { Grounded, TakingOff, Flying, Landing }
     private FlightState state = FlightState.Grounded;
@@ -34,7 +34,6 @@ public class FlyingSystem : MonoBehaviour
     private Vector3 lastFlightDirection;
 
     private float landingTimer;
-    private float debugTimer;
 
     private int isFlyingHash;
     private int flightSpeedHash;
@@ -45,13 +44,6 @@ public class FlyingSystem : MonoBehaviour
         groundMovement = GetComponent<PlayerMovement>();
         animator = GetComponent<Animator>();
 
-        if (groundMovement != null)
-        {
-            groundCheck = groundMovement.groundCheck;
-            groundLayer = groundMovement.groundLayer;
-            groundCheckRadius = groundMovement.groundCheckRadius;
-        }
-
         isFlyingHash = Animator.StringToHash("IsFlying");
         flightSpeedHash = Animator.StringToHash("FlightSpeed");
 
@@ -61,6 +53,13 @@ public class FlyingSystem : MonoBehaviour
 
     void Update()
     {
+        waterCheckTimer -= Time.deltaTime;
+        if (waterCheckTimer <= 0f)
+        {
+            waterCheckTimer = 0.5f;
+            allWaters = FindObjectsByType<WaterBody>(FindObjectsSortMode.None);
+        }
+
         switch (state)
         {
             case FlightState.Grounded: GroundedUpdate(); break;
@@ -76,13 +75,6 @@ public class FlyingSystem : MonoBehaviour
                 UpdateFlightSpeedParam();
             else if (state == FlightState.Grounded || state == FlightState.Landing)
                 animator.SetFloat(flightSpeedHash, 0f);
-        }
-
-        debugTimer += Time.deltaTime;
-        if (debugTimer > 0.5f)
-        {
-            debugTimer = 0f;
-            // Дебаг по необходимости
         }
     }
 
@@ -107,6 +99,7 @@ public class FlyingSystem : MonoBehaviour
         currentFlightSpeed = 0f;
 
         animator.SetBool(isFlyingHash, true);
+        animator.Play(takeoffAnimName, 0, 0f);
     }
 
     // ───── ВЗЛЁТ ─────
@@ -172,6 +165,28 @@ public class FlyingSystem : MonoBehaviour
         move.y = verticalVelocity;
         controller.Move(move * Time.deltaTime);
 
+        // Мягкое скольжение по воде от нижней точки GroundCheck
+        if (allWaters != null && groundMovement != null)
+        {
+            Vector3 groundBottom = groundMovement.GetGroundCheckCenter() + Vector3.down * groundMovement.GetGroundCheckRadius();
+            foreach (WaterBody water in allWaters)
+            {
+                if (groundBottom.y < water.SurfaceY)
+                {
+                    // Не даём опуститься ниже, чем позволяет нижняя точка сферы
+                    float minY = water.SurfaceY + groundMovement.GetGroundCheckRadius();
+                    if (transform.position.y < minY)
+                    {
+                        Vector3 pos = transform.position;
+                        pos.y = minY;
+                        transform.position = pos;
+                        if (verticalVelocity < 0f) verticalVelocity = 0f;
+                    }
+                    break;
+                }
+            }
+        }
+
         if (desiredVertical < 0f && IsGrounded())
         {
             StartLanding();
@@ -213,17 +228,15 @@ public class FlyingSystem : MonoBehaviour
         if (groundMovement) groundMovement.enabled = true;
     }
 
-    // ───── АНИМАЦИИ (ОДНА ВЕРСИЯ) ─────
+    // ───── АНИМАЦИИ ─────
     void UpdateFlightSpeedParam()
     {
-        // Горизонтальная составляющая
         float horizontalAnimSpeed = 0f;
         if (currentFlightSpeed > flightSpeed * 1.3f)
             horizontalAnimSpeed = 2f;
         else if (currentFlightSpeed > 0.5f)
             horizontalAnimSpeed = 1f;
 
-        // Вертикальная составляющая
         float verticalAnimSpeed = 0f;
         float absVertical = Mathf.Abs(verticalVelocity);
         if (absVertical > 1f)
@@ -232,7 +245,6 @@ public class FlyingSystem : MonoBehaviour
             verticalAnimSpeed = 2f;
 
         float targetFs = Mathf.Max(horizontalAnimSpeed, verticalAnimSpeed);
-
         float currentFs = animator.GetFloat(flightSpeedHash);
         float newFs = Mathf.MoveTowards(currentFs, targetFs, 4f * Time.deltaTime);
         animator.SetFloat(flightSpeedHash, newFs);
@@ -240,18 +252,9 @@ public class FlyingSystem : MonoBehaviour
 
     bool IsGrounded()
     {
-        if (groundCheck == null) return false;
-        return Physics.CheckSphere(groundCheck.position, groundCheckRadius, groundLayer);
+        if (groundMovement == null) return false;
+        return Physics.CheckSphere(groundMovement.GetGroundCheckCenter(), groundMovement.GetGroundCheckRadius(), groundMovement.GetGroundLayer());
     }
 
     public bool IsFlying() => state != FlightState.Grounded;
-
-    void OnDrawGizmosSelected()
-    {
-        if (groundCheck)
-        {
-            Gizmos.color = Color.yellow;
-            Gizmos.DrawWireSphere(groundCheck.position, groundCheckRadius);
-        }
-    }
 }

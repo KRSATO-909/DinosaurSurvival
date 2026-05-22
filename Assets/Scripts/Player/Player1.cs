@@ -12,8 +12,11 @@ public class PlayerMovement : MonoBehaviour
     [Header("Ground Check")]
     public Transform groundCheck;
     public float groundCheckRadius = 0.2f;
-    public Vector3 groundCheckOffset = Vector3.zero; // Смещение центра сферы
+    public Vector3 groundCheckOffset = Vector3.zero;
     public LayerMask groundLayer;
+
+    [Header("Water Interaction")]
+    public bool canWalkUnderWater = true;
 
     [Header("Attack")]
     public Transform attackPoint;
@@ -33,7 +36,9 @@ public class PlayerMovement : MonoBehaviour
     private Vector3 lastMoveDirection;
     private bool wasMovingBeforeFreeLook;
 
-    // Вычисляемая позиция центра сферы
+    private WaterBody[] allWaters;
+    private float waterCheckTimer = 0f;
+
     private Vector3 GroundCheckCenter => groundCheck.position + groundCheckOffset;
 
     void Start()
@@ -60,7 +65,6 @@ public class PlayerMovement : MonoBehaviour
 
     void Update()
     {
-        // Проверка земли с учётом смещения
         isGrounded = Physics.CheckSphere(GroundCheckCenter, groundCheckRadius, groundLayer);
 
         if (isGrounded && verticalVelocity < 0)
@@ -76,8 +80,10 @@ public class PlayerMovement : MonoBehaviour
         {
             Vector3 cameraForward = Camera.main.transform.forward;
             Vector3 cameraRight = Camera.main.transform.right;
+
             cameraForward.y = 0;
             cameraRight.y = 0;
+
             cameraForward.Normalize();
             cameraRight.Normalize();
 
@@ -117,18 +123,82 @@ public class PlayerMovement : MonoBehaviour
         if (isMoving && !isFreeLooking && !isAttacking)
         {
             Quaternion targetRotation = Quaternion.LookRotation(moveDirection.normalized);
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+            transform.rotation = Quaternion.Slerp(
+                transform.rotation,
+                targetRotation,
+                rotationSpeed * Time.deltaTime
+            );
         }
         else if (isMoving && isFreeLooking && wasMovingBeforeFreeLook)
         {
             Quaternion targetRotation = Quaternion.LookRotation(lastMoveDirection);
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+            transform.rotation = Quaternion.Slerp(
+                transform.rotation,
+                targetRotation,
+                rotationSpeed * Time.deltaTime
+            );
         }
 
         verticalVelocity += gravity * Time.deltaTime;
 
         Vector3 velocity = moveDirection.normalized * speed;
         velocity.y = verticalVelocity;
+
+        // Проверка воды
+        waterCheckTimer -= Time.deltaTime;
+        if (waterCheckTimer <= 0f)
+        {
+            waterCheckTimer = 0.3f;
+            allWaters = FindObjectsByType<WaterBody>(FindObjectsSortMode.None);
+        }
+
+        if (!canWalkUnderWater && allWaters != null)
+        {
+            foreach (WaterBody water in allWaters)
+            {
+                Vector3 groundCenter = GroundCheckCenter;
+
+                // Если вода дошла до СЕРЕДИНЫ GroundCheck
+                if (water.SurfaceY >= groundCenter.y)
+                {
+                    if (moveDirection.magnitude > 0.1f)
+                    {
+                        // Блокируем движение вперёд
+                        velocity.x = 0f;
+                        velocity.z = 0f;
+                    }
+
+                    // Не даём тонуть вниз
+                    if (verticalVelocity < 0f)
+                        verticalVelocity = 0f;
+
+                    velocity.y = Mathf.Max(velocity.y, 0f);
+
+                    break;
+                }
+
+                // Если ноги уже касаются воды — не даём проваливаться вниз
+                Vector3 groundBottom = groundCenter + Vector3.down * groundCheckRadius;
+
+                if (groundBottom.y <= water.SurfaceY)
+                {
+                    float targetY = water.SurfaceY + groundCheckRadius;
+
+                    Vector3 pos = transform.position;
+                    if (pos.y < targetY)
+                    {
+                        pos.y = targetY;
+                        transform.position = pos;
+                    }
+
+                    if (verticalVelocity < 0f)
+                        verticalVelocity = 0f;
+
+                    velocity.y = Mathf.Max(velocity.y, 0f);
+                }
+            }
+        }
+
         controller.Move(velocity * Time.deltaTime);
 
         if (isAttacking && !attackProcessed)
@@ -137,6 +207,7 @@ public class PlayerMovement : MonoBehaviour
             if (animator != null)
             {
                 AnimatorStateInfo stateInfo = animator.GetCurrentAnimatorStateInfo(0);
+
                 if (stateInfo.normalizedTime >= 0.3f && stateInfo.normalizedTime <= 0.7f)
                 {
                     PerformAttackDamage();
@@ -154,6 +225,7 @@ public class PlayerMovement : MonoBehaviour
     void PerformAttackDamage()
     {
         Collider[] hits = Physics.OverlapSphere(attackPoint.position, attackRange);
+
         foreach (Collider hit in hits)
         {
             if (hit.gameObject != gameObject)
@@ -176,10 +248,14 @@ public class PlayerMovement : MonoBehaviour
 
     public void SetSpeedMultiplier(float multiplier) => speedMultiplier = multiplier;
 
-    // Публичный доступ к данным проверки земли
     public Vector3 GetGroundCheckCenter() => GroundCheckCenter;
     public float GetGroundCheckRadius() => groundCheckRadius;
     public LayerMask GetGroundLayer() => groundLayer;
+
+    public void ResetVerticalVelocity()
+    {
+        verticalVelocity = 0f;
+    }
 
     void OnDrawGizmosSelected()
     {
@@ -189,11 +265,9 @@ public class PlayerMovement : MonoBehaviour
             Gizmos.DrawWireSphere(attackPoint.position, attackRange);
         }
 
-        // Рисуем с учётом смещения
         Gizmos.color = Color.yellow;
         Gizmos.DrawWireSphere(GroundCheckCenter, groundCheckRadius);
 
-        // Рисуем линию от объекта GroundCheck до реального центра проверки
         if (groundCheck != null && groundCheckOffset != Vector3.zero)
         {
             Gizmos.color = Color.white;

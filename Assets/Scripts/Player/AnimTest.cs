@@ -7,6 +7,7 @@ public class AnimationController : MonoBehaviour
     private Animator animator;
     private PlayerMovement movement;
     private FlyingSystem flying;
+    private Swimming swimming;
 
     [Header("Idle Animations")]
     [SerializeField] private string[] idleAnimations = { "Idle1", "Idle2" };
@@ -32,6 +33,7 @@ public class AnimationController : MonoBehaviour
         animator = GetComponent<Animator>();
         movement = GetComponent<PlayerMovement>();
         flying = GetComponent<FlyingSystem>();
+        swimming = GetComponent<Swimming>();
 
         currentIdleAnim = idleAnimations[Random.Range(0, idleAnimations.Length)];
         animator.Play(currentIdleAnim, 0, 0f);
@@ -40,6 +42,10 @@ public class AnimationController : MonoBehaviour
     void Update()
     {
         if (animator == null) return;
+
+        // Если динозавр плывёт – полностью отдаём управление Swimming
+        if (swimming != null && swimming.IsSwimming())
+            return;
 
         HandleMovementAnimations();
         HandleIdleAnimations();
@@ -56,7 +62,6 @@ public class AnimationController : MonoBehaviour
     void HandleMovementAnimations()
     {
         float speed = 0f;
-
         bool isFlying = flying != null && flying.IsFlying();
 
         if (!isFlying && movement != null && movement.enabled && movement.IsMoving())
@@ -146,9 +151,7 @@ public class AnimationController : MonoBehaviour
     void PlayRandomIdle(bool isFlying)
     {
         string[] animations = isFlying ? flightIdleAnimations : idleAnimations;
-
         if (animations.Length == 0) return;
-
         currentIdleAnim = animations[Random.Range(0, animations.Length)];
         animator.Play(currentIdleAnim, 0, 0f);
     }
@@ -156,7 +159,6 @@ public class AnimationController : MonoBehaviour
     void PerformAttack(bool isFlying)
     {
         string[] animations = isFlying ? flightAttackAnimations : attackAnimations;
-
         if (animations.Length == 0) return;
 
         string attackAnim = animations[Random.Range(0, animations.Length)];
