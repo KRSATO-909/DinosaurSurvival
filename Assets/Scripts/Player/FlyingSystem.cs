@@ -4,16 +4,19 @@
 public class FlyingSystem : MonoBehaviour
 {
     [Header("Takeoff")]
-    [SerializeField] private float takeoffJumpHeight = 5f; // Высота прыжка-взлёта
+    [SerializeField] private float takeoffJumpHeight = 6f;
+    [SerializeField] private string takeoffAnimName = "TakeoffQetz";
+    [SerializeField] private string landingAnimName = "LandingQetz";
 
     [Header("Flight Movement")]
-    [SerializeField] private float flightSpeed = 8f;
-    [SerializeField] private float fastFlightSpeed = 14f;
-    [SerializeField] private float flightAcceleration = 5f;
+    [SerializeField] private float flightSpeed = 10f;
+    [SerializeField] private float fastFlightSpeed = 16f;
+    [SerializeField] private float flightAcceleration = 6f;
+    [SerializeField] private float flightRotationSpeed = 8f;
 
-    [Header("Flight Physics")]
-    [SerializeField] private float gravityInFlight = -2f;
-    [SerializeField] private float hoverForce = 5f;
+    [Header("Vertical Control")]
+    [SerializeField] private float verticalSpeed = 5f;
+    [SerializeField] private float verticalDamping = 4f;
 
     private CharacterController controller;
     private PlayerMovement groundMovement;
@@ -22,24 +25,19 @@ public class FlyingSystem : MonoBehaviour
     private LayerMask groundLayer;
     private float groundCheckRadius;
 
-    // Состояния
     private enum FlightState { Grounded, TakingOff, Flying, Landing }
     private FlightState state = FlightState.Grounded;
 
     private float currentFlightSpeed;
     private float verticalVelocity;
-    private Vector3 flightDirection; // Направление полёта (горизонтальное)
+    private Vector3 flightDirection;
+    private Vector3 lastFlightDirection;
 
-    // Таймеры и триггеры
-    private float stateTimer;
-    private bool takeoffTriggered;
-    private bool landingTriggered;
+    private float landingTimer;
+    private float debugTimer;
 
-    // Хеши
     private int isFlyingHash;
     private int flightSpeedHash;
-    private int takeoffTriggerHash;
-    private int landingTriggerHash;
 
     void Start()
     {
@@ -56,41 +54,43 @@ public class FlyingSystem : MonoBehaviour
 
         isFlyingHash = Animator.StringToHash("IsFlying");
         flightSpeedHash = Animator.StringToHash("FlightSpeed");
-        takeoffTriggerHash = Animator.StringToHash("Takeoff");
-        landingTriggerHash = Animator.StringToHash("Land");
 
         flightDirection = transform.forward;
-        Debug.Log("[FlyingSystem] Инициализация завершена");
+        lastFlightDirection = flightDirection;
     }
 
     void Update()
     {
-        Debug.Log($"[FlyingSystem] State={state}, IsGrounded={IsGrounded()}, verticalVelocity={verticalVelocity:F2}");
-
         switch (state)
         {
-            case FlightState.Grounded:
-                HandleGrounded();
-                break;
-            case FlightState.TakingOff:
-                HandleTakingOff();
-                break;
-            case FlightState.Flying:
-                HandleFlying();
-                break;
-            case FlightState.Landing:
-                HandleLanding();
-                break;
+            case FlightState.Grounded: GroundedUpdate(); break;
+            case FlightState.TakingOff: TakingOffUpdate(); break;
+            case FlightState.Flying: FlyingUpdate(); break;
+            case FlightState.Landing: LandingUpdate(); break;
         }
 
-        UpdateAnimatorParameters();
+        if (animator != null)
+        {
+            animator.SetBool(isFlyingHash, state != FlightState.Grounded);
+            if (state == FlightState.Flying)
+                UpdateFlightSpeedParam();
+            else if (state == FlightState.Grounded || state == FlightState.Landing)
+                animator.SetFloat(flightSpeedHash, 0f);
+        }
+
+        debugTimer += Time.deltaTime;
+        if (debugTimer > 0.5f)
+        {
+            debugTimer = 0f;
+            // Дебаг по необходимости
+        }
     }
 
-    void HandleGrounded()
+    // ───── ЗЕМЛЯ ─────
+    void GroundedUpdate()
     {
         if (Input.GetKeyDown(KeyCode.Space) && IsGrounded())
         {
-            Debug.Log("[FlyingSystem] Запуск взлёта");
             StartTakeoff();
         }
     }
@@ -98,139 +98,110 @@ public class FlyingSystem : MonoBehaviour
     void StartTakeoff()
     {
         state = FlightState.TakingOff;
-        stateTimer = 0f;
-        takeoffTriggered = true;
+        if (groundMovement) groundMovement.enabled = false;
 
-        if (groundMovement != null)
-            groundMovement.enabled = false;
-
-        // Импульс вверх
-        verticalVelocity = Mathf.Sqrt(2f * Mathf.Abs(gravityInFlight) * takeoffJumpHeight);
-        flightDirection = transform.forward; // Направление вперёд
+        float absGrav = Mathf.Abs(Physics.gravity.y);
+        verticalVelocity = Mathf.Sqrt(2f * absGrav * takeoffJumpHeight);
+        flightDirection = transform.forward;
+        lastFlightDirection = flightDirection;
         currentFlightSpeed = 0f;
 
-        Debug.Log($"[FlyingSystem] Взлёт: начальная скорость вверх = {verticalVelocity:F2}, высота прыжка = {takeoffJumpHeight}");
-
-        if (animator != null)
-        {
-            animator.SetTrigger(takeoffTriggerHash);
-            animator.SetBool(isFlyingHash, true);
-            Debug.Log("[FlyingSystem] Триггер Takeoff отправлен");
-        }
+        animator.SetBool(isFlyingHash, true);
     }
 
-    void HandleTakingOff()
+    // ───── ВЗЛЁТ ─────
+    void TakingOffUpdate()
     {
-        // Гравитация во время взлёта
-        verticalVelocity += gravityInFlight * Time.deltaTime;
-
+        verticalVelocity += Physics.gravity.y * Time.deltaTime;
         Vector3 move = Vector3.up * verticalVelocity;
-        // Небольшое движение вперёд по инерции
-        move += flightDirection * 0.5f;
         controller.Move(move * Time.deltaTime);
 
-        Debug.Log($"[FlyingSystem] Взлёт: высота={transform.position.y:F2}, верт.скорость={verticalVelocity:F2}");
-
-        // Как только скорость стала отрицательной – взлёт окончен
         if (verticalVelocity <= 0f)
         {
-            Debug.Log("[FlyingSystem] Вершина взлёта достигнута, переход в полёт");
             state = FlightState.Flying;
             verticalVelocity = 0f;
-            currentFlightSpeed = flightSpeed * 0.3f; // начинаем с небольшой скорости
+            currentFlightSpeed = 0f;
         }
     }
 
-    void HandleFlying()
+    // ───── ПОЛЁТ ─────
+    void FlyingUpdate()
     {
-        // Ввод направления
-        float horizontal = Input.GetAxis("Horizontal");
-        float vertical = Input.GetAxis("Vertical");
+        float h = Input.GetAxis("Horizontal");
+        float v = Input.GetAxis("Vertical");
+        bool isFreeLook = Input.GetMouseButton(1);
 
-        // Направление относительно камеры (как на земле)
         Vector3 camForward = Camera.main.transform.forward;
         Vector3 camRight = Camera.main.transform.right;
-        camForward.y = 0f;
-        camRight.y = 0f;
-        camForward.Normalize();
-        camRight.Normalize();
+        camForward.y = 0f; camRight.y = 0f;
+        camForward.Normalize(); camRight.Normalize();
+        Vector3 inputDir = (camForward * v + camRight * h).normalized;
 
-        Vector3 inputDir = (camForward * vertical + camRight * horizontal).normalized;
+        bool hasMovementInput = inputDir.magnitude > 0.1f;
+        bool hasVerticalInput = Input.GetKey(KeyCode.Space) || Input.GetKey(KeyCode.LeftControl);
 
-        // Если есть ввод – летим туда, иначе сохраняем текущее направление (инерция)
-        if (inputDir.magnitude > 0.1f)
+        if (!isFreeLook && hasMovementInput)
         {
-            flightDirection = Vector3.Slerp(flightDirection, inputDir, 5f * Time.deltaTime).normalized;
+            Quaternion targetRot = Quaternion.LookRotation(inputDir);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, flightRotationSpeed * Time.deltaTime);
+            flightDirection = transform.forward;
+            lastFlightDirection = flightDirection;
         }
-        // else flightDirection остаётся прежним
+        else if (isFreeLook)
+        {
+            flightDirection = lastFlightDirection;
+        }
 
-        // Скорость полёта
-        float targetSpeed = Input.GetKey(KeyCode.LeftShift) ? fastFlightSpeed : flightSpeed;
-        bool isMoving = inputDir.magnitude > 0.1f;
+        float targetHorizontalSpeed = 0f;
+        if (hasMovementInput)
+            targetHorizontalSpeed = Input.GetKey(KeyCode.LeftShift) ? fastFlightSpeed : flightSpeed;
 
-        if (isMoving)
-            currentFlightSpeed = Mathf.Lerp(currentFlightSpeed, targetSpeed, flightAcceleration * Time.deltaTime);
-        else
-            currentFlightSpeed = Mathf.Lerp(currentFlightSpeed, 0.2f * flightSpeed, 2f * Time.deltaTime);
+        currentFlightSpeed = Mathf.Lerp(currentFlightSpeed, targetHorizontalSpeed, flightAcceleration * Time.deltaTime);
+        if (!hasMovementInput && currentFlightSpeed < 0.1f)
+            currentFlightSpeed = 0f;
 
-        // Управление высотой
-        float heightInput = 0f;
-        if (Input.GetKey(KeyCode.Space)) heightInput = 1f;
-        else if (Input.GetKey(KeyCode.LeftControl)) heightInput = -1f;
+        float desiredVertical = 0f;
+        if (Input.GetKey(KeyCode.Space)) desiredVertical = verticalSpeed;
+        else if (Input.GetKey(KeyCode.LeftControl)) desiredVertical = -verticalSpeed;
 
-        // Физика
-        verticalVelocity += gravityInFlight * Time.deltaTime;
-        verticalVelocity += hoverForce * Time.deltaTime;
-        verticalVelocity += heightInput * flightSpeed * 0.5f * Time.deltaTime;
+        verticalVelocity = Mathf.Lerp(verticalVelocity, desiredVertical, verticalDamping * Time.deltaTime);
+        if (!hasVerticalInput && Mathf.Abs(verticalVelocity) < 0.1f)
+            verticalVelocity = 0f;
 
-        // Без ограничения максимальной высоты!
-
-        // Итоговое перемещение
         Vector3 move = flightDirection * currentFlightSpeed;
-        move.y += verticalVelocity;
+        move.y = verticalVelocity;
         controller.Move(move * Time.deltaTime);
 
-        Debug.Log($"[FlyingSystem] Полёт: высота={transform.position.y:F2}, скорость={currentFlightSpeed:F2}, верт.скорость={verticalVelocity:F2}, направление={flightDirection}");
-
-        // Посадка: Ctrl + коснулись земли
-        if (Input.GetKey(KeyCode.LeftControl) && IsGrounded() && verticalVelocity < -0.5f)
+        if (desiredVertical < 0f && IsGrounded())
         {
-            Debug.Log("[FlyingSystem] Инициирована посадка");
             StartLanding();
         }
     }
 
+    // ───── ПОСАДКА ─────
     void StartLanding()
     {
         state = FlightState.Landing;
-        stateTimer = 0f;
-        landingTriggered = true;
+        landingTimer = 0f;
         currentFlightSpeed = 0f;
         verticalVelocity = 0f;
 
-        if (animator != null)
-        {
-            animator.SetTrigger(landingTriggerHash);
-            animator.SetBool(isFlyingHash, false);
-            Debug.Log("[FlyingSystem] Триггер Land отправлен");
-        }
+        animator.SetBool(isFlyingHash, false);
+        animator.Play(landingAnimName, 0, 0f);
     }
 
-    void HandleLanding()
+    void LandingUpdate()
     {
-        stateTimer += Time.deltaTime;
+        landingTimer += Time.deltaTime;
 
-        // Ждём окончания анимации посадки
+        bool animDone = false;
         if (animator != null)
         {
-            AnimatorStateInfo stateInfo = animator.GetCurrentAnimatorStateInfo(0);
-            if (stateInfo.IsName("LandingQetz") && stateInfo.normalizedTime >= 0.9f)
-            {
-                Debug.Log("[FlyingSystem] Анимация посадки завершена");
-                CompleteLanding();
-            }
+            AnimatorStateInfo st = animator.GetCurrentAnimatorStateInfo(0);
+            if (st.IsName(landingAnimName) && st.normalizedTime >= 0.9f)
+                animDone = true;
         }
-        else if (stateTimer > 1.5f) // запасной выход
+        if (animDone || landingTimer > 2f)
         {
             CompleteLanding();
         }
@@ -239,58 +210,45 @@ public class FlyingSystem : MonoBehaviour
     void CompleteLanding()
     {
         state = FlightState.Grounded;
-        Debug.Log("[FlyingSystem] Посадка завершена, возврат на землю");
-
-        if (groundMovement != null)
-            groundMovement.enabled = true;
-
-        if (animator != null)
-        {
-            animator.SetBool(isFlyingHash, false);
-            animator.SetFloat(flightSpeedHash, 0f);
-        }
+        if (groundMovement) groundMovement.enabled = true;
     }
 
-    void UpdateAnimatorParameters()
+    // ───── АНИМАЦИИ (ОДНА ВЕРСИЯ) ─────
+    void UpdateFlightSpeedParam()
     {
-        if (animator == null) return;
+        // Горизонтальная составляющая
+        float horizontalAnimSpeed = 0f;
+        if (currentFlightSpeed > flightSpeed * 1.3f)
+            horizontalAnimSpeed = 2f;
+        else if (currentFlightSpeed > 0.5f)
+            horizontalAnimSpeed = 1f;
 
-        // Плавное изменение FlightSpeed с гистерезисом
-        if (state == FlightState.Flying)
-        {
-            float targetFs;
-            if (currentFlightSpeed > flightSpeed * 1.3f)
-                targetFs = 2f;
-            else if (currentFlightSpeed > 0.5f)
-                targetFs = 1f;
-            else
-                targetFs = 0f;
+        // Вертикальная составляющая
+        float verticalAnimSpeed = 0f;
+        float absVertical = Mathf.Abs(verticalVelocity);
+        if (absVertical > 1f)
+            verticalAnimSpeed = 1f;
+        if (absVertical > verticalSpeed * 0.7f)
+            verticalAnimSpeed = 2f;
 
-            float currentFs = animator.GetFloat(flightSpeedHash);
-            float newFs = Mathf.MoveTowards(currentFs, targetFs, 3f * Time.deltaTime);
-            animator.SetFloat(flightSpeedHash, newFs);
-        }
-        else if (state == FlightState.Grounded || state == FlightState.Landing)
-        {
-            animator.SetFloat(flightSpeedHash, 0f);
-        }
+        float targetFs = Mathf.Max(horizontalAnimSpeed, verticalAnimSpeed);
+
+        float currentFs = animator.GetFloat(flightSpeedHash);
+        float newFs = Mathf.MoveTowards(currentFs, targetFs, 4f * Time.deltaTime);
+        animator.SetFloat(flightSpeedHash, newFs);
     }
 
     bool IsGrounded()
     {
         if (groundCheck == null) return false;
-        bool grounded = Physics.CheckSphere(groundCheck.position, groundCheckRadius, groundLayer);
-        return grounded;
+        return Physics.CheckSphere(groundCheck.position, groundCheckRadius, groundLayer);
     }
 
-    public bool IsFlying()
-    {
-        return state == FlightState.TakingOff || state == FlightState.Flying || state == FlightState.Landing;
-    }
+    public bool IsFlying() => state != FlightState.Grounded;
 
     void OnDrawGizmosSelected()
     {
-        if (groundCheck != null)
+        if (groundCheck)
         {
             Gizmos.color = Color.yellow;
             Gizmos.DrawWireSphere(groundCheck.position, groundCheckRadius);

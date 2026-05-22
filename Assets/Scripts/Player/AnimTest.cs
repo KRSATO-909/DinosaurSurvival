@@ -79,6 +79,13 @@ public class AnimationController : MonoBehaviour
     void HandleIdleAnimations()
     {
         bool isFlying = flying != null && flying.IsFlying();
+        // В полёте мы не управляем идлами — аниматор сам переключает их через переходы
+        if (isFlying)
+        {
+            waitingForNextIdle = false;
+            return;
+        }
+
         bool isMoving = animator.GetFloat("Speed") > 0.1f;
 
         if (isMoving || isAttacking)
@@ -89,33 +96,20 @@ public class AnimationController : MonoBehaviour
 
         if (waitingForNextIdle)
         {
-            PlayRandomIdle(isFlying);
+            PlayRandomIdle(false);
             waitingForNextIdle = false;
             return;
         }
 
         AnimatorStateInfo stateInfo = animator.GetCurrentAnimatorStateInfo(0);
 
-        // Проверяем что текущая анимация из нужного набора и она закончилась
-        string[] currentSet = isFlying ? flightIdleAnimations : idleAnimations;
-        bool isInCurrentSet = false;
-        foreach (string anim in currentSet)
+        if (IsIdleAnimation(stateInfo) && stateInfo.normalizedTime >= 1f)
         {
-            if (stateInfo.IsName(anim))
-            {
-                isInCurrentSet = true;
-                break;
-            }
+            PlayRandomIdle(false);
         }
-
-        if (isInCurrentSet && stateInfo.normalizedTime >= 1f)
+        else if (!IsIdleAnimation(stateInfo) && !isFlying)
         {
-            PlayRandomIdle(isFlying);
-        }
-        else if (!isInCurrentSet)
-        {
-            // Если мы не в идл анимации нужного типа — переключаем
-            PlayRandomIdle(isFlying);
+            PlayRandomIdle(false);
         }
     }
 

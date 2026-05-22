@@ -12,12 +12,13 @@ public class PlayerMovement : MonoBehaviour
     [Header("Ground Check")]
     public Transform groundCheck;
     public float groundCheckRadius = 0.2f;
+    public Vector3 groundCheckOffset = Vector3.zero; // Смещение центра сферы
     public LayerMask groundLayer;
 
     [Header("Attack")]
     public Transform attackPoint;
     public float attackRange = 1.5f;
-    public float attackCooldown = 0.8f; // Кулдаун вернулся сюда!
+    public float attackCooldown = 0.8f;
 
     private CharacterController controller;
     private float verticalVelocity;
@@ -29,14 +30,15 @@ public class PlayerMovement : MonoBehaviour
     private float lastAttackTime;
     private bool attackProcessed;
 
-    // Для ПКМ: запоминаем направление движения
     private Vector3 lastMoveDirection;
     private bool wasMovingBeforeFreeLook;
+
+    // Вычисляемая позиция центра сферы
+    private Vector3 GroundCheckCenter => groundCheck.position + groundCheckOffset;
 
     void Start()
     {
         controller = GetComponent<CharacterController>();
-
         lastAttackTime = -attackCooldown;
 
         if (groundCheck == null)
@@ -58,19 +60,16 @@ public class PlayerMovement : MonoBehaviour
 
     void Update()
     {
-        // Проверка на земле
-        isGrounded = Physics.CheckSphere(groundCheck.position, groundCheckRadius, groundLayer);
+        // Проверка земли с учётом смещения
+        isGrounded = Physics.CheckSphere(GroundCheckCenter, groundCheckRadius, groundLayer);
 
         if (isGrounded && verticalVelocity < 0)
             verticalVelocity = -2f;
 
-        // Движение
         float horizontal = Input.GetAxis("Horizontal");
         float vertical = Input.GetAxis("Vertical");
 
         Vector3 inputDirection = new Vector3(horizontal, 0, vertical);
-
-        // Получаем направление относительно камеры
         Vector3 moveDirection = Vector3.zero;
 
         if (Camera.main != null)
@@ -87,22 +86,18 @@ public class PlayerMovement : MonoBehaviour
 
         bool isFreeLooking = Input.GetMouseButton(1);
 
-        // Логика ПКМ: запоминаем направление когда начинаем свободный обзор
         if (isFreeLooking)
         {
-            // Если только что нажали ПКМ и двигались — запоминаем направление
             if (inputDirection.magnitude > 0.1f && !wasMovingBeforeFreeLook)
             {
                 lastMoveDirection = moveDirection.normalized;
                 wasMovingBeforeFreeLook = true;
             }
-            // Если стоим на месте — обнуляем
             else if (inputDirection.magnitude <= 0.1f)
             {
                 wasMovingBeforeFreeLook = false;
             }
 
-            // Используем сохранённое направление
             if (wasMovingBeforeFreeLook && inputDirection.magnitude > 0.1f)
             {
                 moveDirection = lastMoveDirection * inputDirection.magnitude;
@@ -110,41 +105,32 @@ public class PlayerMovement : MonoBehaviour
         }
         else
         {
-            // Отпустили ПКМ — сбрасываем
             wasMovingBeforeFreeLook = false;
         }
 
-        // Определяем состояние движения
         isMoving = moveDirection.magnitude > 0.1f;
         isSprinting = Input.GetKey(KeyCode.LeftShift) && isMoving;
 
-        // Скорость
         float speed = isSprinting ? sprintSpeed : walkSpeed;
         speed *= speedMultiplier;
 
-        // Поворот в сторону движения
-        // ВАЖНО: поворачиваем только если двигаемся и не в свободном обзоре
         if (isMoving && !isFreeLooking && !isAttacking)
         {
             Quaternion targetRotation = Quaternion.LookRotation(moveDirection.normalized);
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
         }
-        // Если в свободном обзоре — продолжаем смотреть в lastMoveDirection
         else if (isMoving && isFreeLooking && wasMovingBeforeFreeLook)
         {
             Quaternion targetRotation = Quaternion.LookRotation(lastMoveDirection);
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
         }
 
-        // Гравитация
         verticalVelocity += gravity * Time.deltaTime;
 
-        // Движение
         Vector3 velocity = moveDirection.normalized * speed;
         velocity.y = verticalVelocity;
         controller.Move(velocity * Time.deltaTime);
 
-        // Обработка урона атаки
         if (isAttacking && !attackProcessed)
         {
             Animator animator = GetComponent<Animator>();
@@ -167,8 +153,6 @@ public class PlayerMovement : MonoBehaviour
 
     void PerformAttackDamage()
     {
-        //Debug.Log("Укус!");
-
         Collider[] hits = Physics.OverlapSphere(attackPoint.position, attackRange);
         foreach (Collider hit in hits)
         {
@@ -179,31 +163,23 @@ public class PlayerMovement : MonoBehaviour
         }
     }
 
-    // Публичные методы
     public bool IsMoving() => isMoving;
     public bool IsSprinting() => isSprinting;
     public bool IsGrounded() => isGrounded;
     public bool IsFreeLooking() => Input.GetMouseButton(1);
 
-    public bool CanAttack()
-    {
-        return Time.time >= lastAttackTime + attackCooldown;
-    }
+    public bool CanAttack() => Time.time >= lastAttackTime + attackCooldown;
 
-    public void OnAttackStarted()
-    {
-        lastAttackTime = Time.time;
-    }
+    public void OnAttackStarted() => lastAttackTime = Time.time;
 
-    public void SetAttacking(bool attacking)
-    {
-        isAttacking = attacking;
-    }
+    public void SetAttacking(bool attacking) => isAttacking = attacking;
 
-    public void SetSpeedMultiplier(float multiplier)
-    {
-        speedMultiplier = multiplier;
-    }
+    public void SetSpeedMultiplier(float multiplier) => speedMultiplier = multiplier;
+
+    // Публичный доступ к данным проверки земли
+    public Vector3 GetGroundCheckCenter() => GroundCheckCenter;
+    public float GetGroundCheckRadius() => groundCheckRadius;
+    public LayerMask GetGroundLayer() => groundLayer;
 
     void OnDrawGizmosSelected()
     {
@@ -213,10 +189,16 @@ public class PlayerMovement : MonoBehaviour
             Gizmos.DrawWireSphere(attackPoint.position, attackRange);
         }
 
-        if (groundCheck != null)
+        // Рисуем с учётом смещения
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawWireSphere(GroundCheckCenter, groundCheckRadius);
+
+        // Рисуем линию от объекта GroundCheck до реального центра проверки
+        if (groundCheck != null && groundCheckOffset != Vector3.zero)
         {
-            Gizmos.color = Color.yellow;
-            Gizmos.DrawWireSphere(groundCheck.position, groundCheckRadius);
+            Gizmos.color = Color.white;
+            Gizmos.DrawLine(groundCheck.position, GroundCheckCenter);
+            Gizmos.DrawWireSphere(groundCheck.position, 0.05f);
         }
     }
 }

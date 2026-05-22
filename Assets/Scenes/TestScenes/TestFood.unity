@@ -831,6 +831,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Quetzalcoatlus
       objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: fac4635f306e02e40a8ebb75285b34b4, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects:
@@ -853,6 +857,15 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: fac4635f306e02e40a8ebb75285b34b4, type: 3}
       insertIndex: -1
       addedObject: {fileID: 654731195}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: fac4635f306e02e40a8ebb75285b34b4, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 654731197}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: fac4635f306e02e40a8ebb75285b34b4, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 654731196}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: fac4635f306e02e40a8ebb75285b34b4, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 654731198}
   m_SourcePrefab: {fileID: 100100000, guid: fac4635f306e02e40a8ebb75285b34b4, type: 3}
 --- !u!1 &488477202
 GameObject:
@@ -1191,7 +1204,8 @@ MonoBehaviour:
   rotationSpeed: 5
   gravity: -20
   groundCheck: {fileID: 654731190}
-  groundCheckRadius: 3
+  groundCheckRadius: 1
+  groundCheckOffset: {x: 0, y: 0, z: 0}
   groundLayer:
     serializedVersion: 2
     m_Bits: 8
@@ -1236,13 +1250,63 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FlyingSystem
   takeoffJumpHeight: 5
-  flightSpeed: 8
-  fastFlightSpeed: 14
+  takeoffAnimName: TakeoffQetz
+  landingAnimName: LandingQetz
+  flightSpeed: 4
+  fastFlightSpeed: 12
   flightAcceleration: 5
-  yawSpeed: 3
-  gravityInFlight: -2
-  hoverForce: 5
-  maxHeight: 100
+  flightRotationSpeed: 8
+  verticalSpeed: 5
+  verticalDamping: 4
+--- !u!114 &654731196
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 654731189}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e176b28d8d05fa942855c641e38cd27e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::InteractionSystem
+  interactKey: 101
+  autoDetectRadius: 10
+--- !u!114 &654731197
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 654731189}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a15f347cfb06f67428eeb7dc834b93b8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DinoDiet
+  dietType: 0
+  customEdibleFoods: 
+--- !u!114 &654731198
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 654731189}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1af86de0094ba6d4d8b5a88a52cc5e87, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SurvivalStats
+  maxHunger: 100
+  hungerDepleteRate: 2
+  hungerDamage: 5
+  maxThirst: 100
+  thirstDepleteRate: 3
+  thirstDamage: 8
+  maxHealth: 100
+  healthRegenRate: 1
+  regenThreshold: 70
 --- !u!1 &720494876
 GameObject:
   m_ObjectHideFlags: 0
@@ -1465,6 +1529,7 @@ MonoBehaviour:
   gravity: -20
   groundCheck: {fileID: 928101224}
   groundCheckRadius: 0.2
+  groundCheckOffset: {x: 0, y: -1, z: 0}
   groundLayer:
     serializedVersion: 2
     m_Bits: 8
@@ -2207,6 +2272,7 @@ MonoBehaviour:
   gravity: -20
   groundCheck: {fileID: 1223823890}
   groundCheckRadius: 0.2
+  groundCheckOffset: {x: 0, y: -1, z: 0}
   groundLayer:
     serializedVersion: 2
     m_Bits: 8
@@ -2518,6 +2584,7 @@ MonoBehaviour:
   gravity: -20
   groundCheck: {fileID: 1330494848}
   groundCheckRadius: 0.2
+  groundCheckOffset: {x: 0, y: -1, z: 0}
   groundLayer:
     serializedVersion: 2
     m_Bits: 8
@@ -2951,6 +3018,7 @@ MonoBehaviour:
   gravity: -20
   groundCheck: {fileID: 1528961255}
   groundCheckRadius: 0.2
+  groundCheckOffset: {x: 0, y: -1, z: 0}
   groundLayer:
     serializedVersion: 2
     m_Bits: 8
@@ -3212,6 +3280,7 @@ MonoBehaviour:
   gravity: -20
   groundCheck: {fileID: 1559920437}
   groundCheckRadius: 0.2
+  groundCheckOffset: {x: 0, y: -1, z: 0}
   groundLayer:
     serializedVersion: 2
     m_Bits: 8
@@ -4000,5 +4069,5 @@ SceneRoots:
   - {fileID: 2123461683}
   - {fileID: 429929429}
   - {fileID: 1047051962}
-  - {fileID: 431971416}
   - {fileID: 720494878}
+  - {fileID: 431971416}

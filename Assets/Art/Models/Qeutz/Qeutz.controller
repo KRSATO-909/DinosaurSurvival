@@ -96,7 +96,7 @@ AnimatorState:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: FlightRunQetz
-  m_Speed: 1
+  m_Speed: 2
   m_CycleOffset: 0
   m_Transitions:
   - {fileID: -4165355910598817011}
@@ -640,7 +640,7 @@ AnimatorState:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: LandingQetz
-  m_Speed: 1
+  m_Speed: 5
   m_CycleOffset: 0
   m_Transitions:
   - {fileID: -3562168744919301181}
@@ -1115,18 +1115,6 @@ AnimatorController:
     m_DefaultInt: 0
     m_DefaultBool: 0
     m_Controller: {fileID: 9100000}
-  - m_Name: Land
-    m_Type: 9
-    m_DefaultFloat: 0
-    m_DefaultInt: 0
-    m_DefaultBool: 0
-    m_Controller: {fileID: 9100000}
-  - m_Name: Takeoff
-    m_Type: 9
-    m_DefaultFloat: 0
-    m_DefaultInt: 0
-    m_DefaultBool: 0
-    m_Controller: {fileID: 9100000}
   m_AnimatorLayers:
   - serializedVersion: 5
     m_Name: Base Layer
@@ -1413,16 +1401,16 @@ AnimatorStateMachine:
     m_Position: {x: 490, y: -130, z: 0}
   - serializedVersion: 1
     m_State: {fileID: 7085641472532916727}
-    m_Position: {x: -150, y: -220, z: 0}
+    m_Position: {x: -180, y: -220, z: 0}
   - serializedVersion: 1
     m_State: {fileID: 2286989975683347584}
     m_Position: {x: 220, y: -380, z: 0}
   - serializedVersion: 1
     m_State: {fileID: -3885051519782239036}
-    m_Position: {x: 570, y: -390, z: 0}
+    m_Position: {x: 660, y: -370, z: 0}
   - serializedVersion: 1
     m_State: {fileID: 6941715355089083693}
-    m_Position: {x: 390, y: -540, z: 0}
+    m_Position: {x: 380, y: -520, z: 0}
   - serializedVersion: 1
     m_State: {fileID: -8422958510720237349}
     m_Position: {x: 840, y: -470, z: 0}
@@ -1434,7 +1422,7 @@ AnimatorStateMachine:
     m_Position: {x: 750, y: -150, z: 0}
   - serializedVersion: 1
     m_State: {fileID: -3923440922617750094}
-    m_Position: {x: 1180, y: -310, z: 0}
+    m_Position: {x: 1190, y: -270, z: 0}
   m_ChildStateMachines: []
   m_AnyStateTransitions: []
   m_EntryTransitions: []
@@ -1894,7 +1882,7 @@ AnimatorState:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: FlightWalkQetz
-  m_Speed: 1
+  m_Speed: 0.8
   m_CycleOffset: 0
   m_Transitions:
   - {fileID: -1996269179273377351}
@@ -1912,7 +1900,7 @@ AnimatorState:
   m_MirrorParameterActive: 0
   m_CycleOffsetParameterActive: 0
   m_TimeParameterActive: 0
-  m_Motion: {fileID: 7400000, guid: ee107636c23b03a4eb265a4be7e0e0a2, type: 2}
+  m_Motion: {fileID: 7400000, guid: cdb5b6adf154b6843a9bbb82f1162f0a, type: 2}
   m_Tag: 
   m_SpeedParameter: 
   m_MirrorParameter: 
@@ -1926,7 +1914,7 @@ AnimatorState:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: TakeoffQetz
-  m_Speed: 1
+  m_Speed: 4
   m_CycleOffset: 0
   m_Transitions:
   - {fileID: 230358011921179440}
