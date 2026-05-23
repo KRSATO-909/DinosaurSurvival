@@ -27,6 +27,7 @@ public class AnimationController : MonoBehaviour
     private bool waitingForNextIdle;
     private float attackEndTime;
     private bool wasFlyingLastFrame;
+    private WaterCreature waterCreature;
 
     void Start()
     {
@@ -34,6 +35,7 @@ public class AnimationController : MonoBehaviour
         movement = GetComponent<PlayerMovement>();
         flying = GetComponent<FlyingSystem>();
         swimming = GetComponent<Swimming>();
+        waterCreature = GetComponent<WaterCreature>();
 
         currentIdleAnim = idleAnimations[Random.Range(0, idleAnimations.Length)];
         animator.Play(currentIdleAnim, 0, 0f);
@@ -46,6 +48,12 @@ public class AnimationController : MonoBehaviour
         // Если динозавр плывёт – полностью отдаём управление Swimming
         if (swimming != null && swimming.IsSwimming())
             return;
+
+        if (waterCreature != null && waterCreature.IsActive())
+        {
+            HandleAttackAnimations(); // атаки оставить
+            return;
+        }
 
         HandleMovementAnimations();
         HandleIdleAnimations();
@@ -61,7 +69,11 @@ public class AnimationController : MonoBehaviour
 
     void HandleMovementAnimations()
     {
+        if (waterCreature != null && waterCreature.IsActive())
+            return;
+
         float speed = 0f;
+
         bool isFlying = flying != null && flying.IsFlying();
 
         if (!isFlying && movement != null && movement.enabled && movement.IsMoving())
@@ -83,6 +95,8 @@ public class AnimationController : MonoBehaviour
 
     void HandleIdleAnimations()
     {
+        if (waterCreature != null && waterCreature.IsActive())
+            return;
         bool isFlying = flying != null && flying.IsFlying();
         // В полёте мы не управляем идлами — аниматор сам переключает их через переходы
         if (isFlying)

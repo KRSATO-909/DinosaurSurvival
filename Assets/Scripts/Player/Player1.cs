@@ -17,6 +17,7 @@ public class PlayerMovement : MonoBehaviour
 
     [Header("Water Interaction")]
     public bool canWalkUnderWater = true;
+    public float waterBlockDistance = 3f;
 
     [Header("Attack")]
     public Transform attackPoint;
@@ -24,32 +25,34 @@ public class PlayerMovement : MonoBehaviour
     public float attackCooldown = 0.8f;
 
     private CharacterController controller;
+    private Animator animator;
+
     private float verticalVelocity;
+    private float speedMultiplier = 1f;
+    private float lastAttackTime;
+
     private bool isGrounded;
     private bool isMoving;
     private bool isSprinting;
     private bool isAttacking;
-    private float speedMultiplier = 1f;
-    private float lastAttackTime;
     private bool attackProcessed;
-
-    private Vector3 lastMoveDirection;
     private bool wasMovingBeforeFreeLook;
 
-    private WaterBody[] allWaters;
-    private float waterCheckTimer = 0f;
+    private Vector3 lastMoveDirection;
 
     private Vector3 GroundCheckCenter => groundCheck.position + groundCheckOffset;
 
     void Start()
     {
         controller = GetComponent<CharacterController>();
+        animator = GetComponent<Animator>();
+
         lastAttackTime = -attackCooldown;
 
         if (groundCheck == null)
         {
             GameObject go = new GameObject("GroundCheck");
-            go.transform.parent = transform;
+            go.transform.SetParent(transform);
             go.transform.localPosition = new Vector3(0, -1f, 0);
             groundCheck = go.transform;
         }
@@ -57,7 +60,7 @@ public class PlayerMovement : MonoBehaviour
         if (attackPoint == null)
         {
             GameObject go = new GameObject("AttackPoint");
-            go.transform.parent = transform;
+            go.transform.SetParent(transform);
             go.transform.localPosition = new Vector3(0, 0.5f, 1f);
             attackPoint = go.transform;
         }
@@ -65,160 +68,159 @@ public class PlayerMovement : MonoBehaviour
 
     void Update()
     {
-        isGrounded = Physics.CheckSphere(GroundCheckCenter, groundCheckRadius, groundLayer);
-
-        if (isGrounded && verticalVelocity < 0)
-            verticalVelocity = -2f;
+        HandleGroundCheck();
 
         float horizontal = Input.GetAxis("Horizontal");
         float vertical = Input.GetAxis("Vertical");
 
-        Vector3 inputDirection = new Vector3(horizontal, 0, vertical);
-        Vector3 moveDirection = Vector3.zero;
-
-        if (Camera.main != null)
-        {
-            Vector3 cameraForward = Camera.main.transform.forward;
-            Vector3 cameraRight = Camera.main.transform.right;
-
-            cameraForward.y = 0;
-            cameraRight.y = 0;
-
-            cameraForward.Normalize();
-            cameraRight.Normalize();
-
-            moveDirection = cameraForward * vertical + cameraRight * horizontal;
-        }
+        Vector3 inputDirection = new Vector3(horizontal, 0f, vertical);
+        Vector3 moveDirection = GetCameraRelativeMove(horizontal, vertical);
 
         bool isFreeLooking = Input.GetMouseButton(1);
 
-        if (isFreeLooking)
-        {
-            if (inputDirection.magnitude > 0.1f && !wasMovingBeforeFreeLook)
-            {
-                lastMoveDirection = moveDirection.normalized;
-                wasMovingBeforeFreeLook = true;
-            }
-            else if (inputDirection.magnitude <= 0.1f)
-            {
-                wasMovingBeforeFreeLook = false;
-            }
+        HandleFreeLook(ref moveDirection, inputDirection, isFreeLooking);
 
-            if (wasMovingBeforeFreeLook && inputDirection.magnitude > 0.1f)
-            {
-                moveDirection = lastMoveDirection * inputDirection.magnitude;
-            }
+        isMoving = moveDirection.sqrMagnitude > 0.01f;
+        isSprinting = isMoving && Input.GetKey(KeyCode.LeftShift);
+
+        float speed = (isSprinting ? sprintSpeed : walkSpeed) * speedMultiplier;
+
+        HandleRotation(moveDirection, isFreeLooking);
+
+        verticalVelocity += gravity * Time.deltaTime;
+
+        Vector3 horizontalVelocity = isMoving
+            ? moveDirection.normalized * speed
+            : Vector3.zero;
+
+        if (!canWalkUnderWater && isMoving)
+        {
+            horizontalVelocity = ResolveWaterMovement(moveDirection.normalized, speed);
         }
-        else
+
+        Vector3 velocity = horizontalVelocity;
+        velocity.y = verticalVelocity;
+
+        controller.Move(velocity * Time.deltaTime);
+
+        HandleAttack();
+    }
+
+    void HandleGroundCheck()
+    {
+        isGrounded = Physics.CheckSphere(
+            GroundCheckCenter,
+            groundCheckRadius,
+            groundLayer
+        );
+
+        if (isGrounded && verticalVelocity < 0f)
+            verticalVelocity = -2f;
+    }
+
+    Vector3 GetCameraRelativeMove(float horizontal, float vertical)
+    {
+        if (Camera.main == null)
+            return Vector3.zero;
+
+        Transform cam = Camera.main.transform;
+
+        Vector3 forward = cam.forward;
+        Vector3 right = cam.right;
+
+        forward.y = 0f;
+        right.y = 0f;
+
+        forward.Normalize();
+        right.Normalize();
+
+        return forward * vertical + right * horizontal;
+    }
+
+    void HandleFreeLook(ref Vector3 moveDirection, Vector3 inputDirection, bool isFreeLooking)
+    {
+        bool hasInput = inputDirection.sqrMagnitude > 0.01f;
+
+        if (!isFreeLooking)
+        {
+            wasMovingBeforeFreeLook = false;
+            return;
+        }
+
+        if (hasInput && !wasMovingBeforeFreeLook)
+        {
+            lastMoveDirection = moveDirection.normalized;
+            wasMovingBeforeFreeLook = true;
+        }
+        else if (!hasInput)
         {
             wasMovingBeforeFreeLook = false;
         }
 
-        isMoving = moveDirection.magnitude > 0.1f;
-        isSprinting = Input.GetKey(KeyCode.LeftShift) && isMoving;
-
-        float speed = isSprinting ? sprintSpeed : walkSpeed;
-        speed *= speedMultiplier;
-
-        if (isMoving && !isFreeLooking && !isAttacking)
+        if (wasMovingBeforeFreeLook && hasInput)
         {
-            Quaternion targetRotation = Quaternion.LookRotation(moveDirection.normalized);
-            transform.rotation = Quaternion.Slerp(
-                transform.rotation,
-                targetRotation,
-                rotationSpeed * Time.deltaTime
-            );
+            moveDirection = lastMoveDirection * inputDirection.magnitude;
         }
-        else if (isMoving && isFreeLooking && wasMovingBeforeFreeLook)
+    }
+
+    void HandleRotation(Vector3 moveDirection, bool isFreeLooking)
+    {
+        if (!isMoving || isAttacking)
+            return;
+
+        Vector3 lookDirection = moveDirection;
+
+        if (isFreeLooking && wasMovingBeforeFreeLook)
+            lookDirection = lastMoveDirection;
+
+        Quaternion targetRotation = Quaternion.LookRotation(lookDirection.normalized);
+
+        transform.rotation = Quaternion.Slerp(
+            transform.rotation,
+            targetRotation,
+            rotationSpeed * Time.deltaTime
+        );
+    }
+
+    Vector3 ResolveWaterMovement(Vector3 desiredDir, float speed)
+    {
+        if (desiredDir.sqrMagnitude < 0.001f)
+            return Vector3.zero;
+
+        Vector3 currentPos = transform.position;
+        Vector3 rayStart = currentPos + Vector3.up * 0.5f;
+        Vector3 rayDir = (desiredDir + Vector3.down * 0.5f).normalized;
+
+        Debug.DrawRay(rayStart, rayDir * waterBlockDistance, Color.cyan);
+
+        if (Physics.Raycast(rayStart, rayDir, out RaycastHit hit, waterBlockDistance))
         {
-            Quaternion targetRotation = Quaternion.LookRotation(lastMoveDirection);
-            transform.rotation = Quaternion.Slerp(
-                transform.rotation,
-                targetRotation,
-                rotationSpeed * Time.deltaTime
-            );
-        }
+            WaterBody water = hit.collider.GetComponent<WaterBody>();
 
-        verticalVelocity += gravity * Time.deltaTime;
-
-        Vector3 velocity = moveDirection.normalized * speed;
-        velocity.y = verticalVelocity;
-
-        // Проверка воды
-        waterCheckTimer -= Time.deltaTime;
-        if (waterCheckTimer <= 0f)
-        {
-            waterCheckTimer = 0.3f;
-            allWaters = FindObjectsByType<WaterBody>(FindObjectsSortMode.None);
-        }
-
-        if (!canWalkUnderWater && allWaters != null)
-        {
-            foreach (WaterBody water in allWaters)
-            {
-                Vector3 groundCenter = GroundCheckCenter;
-
-                // Если вода дошла до СЕРЕДИНЫ GroundCheck
-                if (water.SurfaceY >= groundCenter.y)
-                {
-                    if (moveDirection.magnitude > 0.1f)
-                    {
-                        // Блокируем движение вперёд
-                        velocity.x = 0f;
-                        velocity.z = 0f;
-                    }
-
-                    // Не даём тонуть вниз
-                    if (verticalVelocity < 0f)
-                        verticalVelocity = 0f;
-
-                    velocity.y = Mathf.Max(velocity.y, 0f);
-
-                    break;
-                }
-
-                // Если ноги уже касаются воды — не даём проваливаться вниз
-                Vector3 groundBottom = groundCenter + Vector3.down * groundCheckRadius;
-
-                if (groundBottom.y <= water.SurfaceY)
-                {
-                    float targetY = water.SurfaceY + groundCheckRadius;
-
-                    Vector3 pos = transform.position;
-                    if (pos.y < targetY)
-                    {
-                        pos.y = targetY;
-                        transform.position = pos;
-                    }
-
-                    if (verticalVelocity < 0f)
-                        verticalVelocity = 0f;
-
-                    velocity.y = Mathf.Max(velocity.y, 0f);
-                }
-            }
+            if (water != null && water.SurfaceY < currentPos.y - 0.2f)
+                return Vector3.zero;
         }
 
-        controller.Move(velocity * Time.deltaTime);
+        return desiredDir * speed;
+    }
 
-        if (isAttacking && !attackProcessed)
-        {
-            Animator animator = GetComponent<Animator>();
-            if (animator != null)
-            {
-                AnimatorStateInfo stateInfo = animator.GetCurrentAnimatorStateInfo(0);
-
-                if (stateInfo.normalizedTime >= 0.3f && stateInfo.normalizedTime <= 0.7f)
-                {
-                    PerformAttackDamage();
-                    attackProcessed = true;
-                }
-            }
-        }
-
+    void HandleAttack()
+    {
         if (!isAttacking)
         {
             attackProcessed = false;
+            return;
+        }
+
+        if (attackProcessed || animator == null)
+            return;
+
+        AnimatorStateInfo stateInfo = animator.GetCurrentAnimatorStateInfo(0);
+
+        if (stateInfo.normalizedTime >= 0.3f && stateInfo.normalizedTime <= 0.7f)
+        {
+            PerformAttackDamage();
+            attackProcessed = true;
         }
     }
 
@@ -243,36 +245,26 @@ public class PlayerMovement : MonoBehaviour
     public bool CanAttack() => Time.time >= lastAttackTime + attackCooldown;
 
     public void OnAttackStarted() => lastAttackTime = Time.time;
-
     public void SetAttacking(bool attacking) => isAttacking = attacking;
-
     public void SetSpeedMultiplier(float multiplier) => speedMultiplier = multiplier;
+    public void ResetVerticalVelocity() => verticalVelocity = 0f;
 
     public Vector3 GetGroundCheckCenter() => GroundCheckCenter;
     public float GetGroundCheckRadius() => groundCheckRadius;
     public LayerMask GetGroundLayer() => groundLayer;
 
-    public void ResetVerticalVelocity()
-    {
-        verticalVelocity = 0f;
-    }
-
     void OnDrawGizmosSelected()
     {
         if (attackPoint != null)
         {
-            Gizmos.color = Time.time < lastAttackTime + attackCooldown ? Color.grey : Color.red;
+            Gizmos.color = Time.time < lastAttackTime + attackCooldown
+                ? Color.grey
+                : Color.red;
+
             Gizmos.DrawWireSphere(attackPoint.position, attackRange);
         }
 
         Gizmos.color = Color.yellow;
         Gizmos.DrawWireSphere(GroundCheckCenter, groundCheckRadius);
-
-        if (groundCheck != null && groundCheckOffset != Vector3.zero)
-        {
-            Gizmos.color = Color.white;
-            Gizmos.DrawLine(groundCheck.position, GroundCheckCenter);
-            Gizmos.DrawWireSphere(groundCheck.position, 0.05f);
-        }
     }
 }

@@ -2,20 +2,23 @@ using UnityEngine;
 
 public class SurvivalStats : MonoBehaviour
 {
+    [Header("Creature Type")]
+    [SerializeField] private bool isAquatic = false;
+
     [Header("Hunger Settings")]
     [SerializeField] private float maxHunger = 100f;
-    [SerializeField] private float hungerDepleteRate = 2f; // Единиц в секунду
-    [SerializeField] private float hungerDamage = 5f; // Урон когда голод на нуле
+    [SerializeField] private float hungerDepleteRate = 2f;
+    [SerializeField] private float hungerDamage = 5f;
 
     [Header("Thirst Settings")]
     [SerializeField] private float maxThirst = 100f;
-    [SerializeField] private float thirstDepleteRate = 3f; // Жажда быстрее чем голод
+    [SerializeField] private float thirstDepleteRate = 3f;
     [SerializeField] private float thirstDamage = 8f;
 
     [Header("Health Settings")]
     [SerializeField] private float maxHealth = 100f;
-    [SerializeField] private float healthRegenRate = 1f; // Реген при хороших показателях
-    [SerializeField] private float regenThreshold = 70f; // Выше этого — регеним
+    [SerializeField] private float healthRegenRate = 1f;
+    [SerializeField] private float regenThreshold = 70f;
 
     private float currentHunger;
     private float currentThirst;
@@ -27,8 +30,10 @@ public class SurvivalStats : MonoBehaviour
     void Start()
     {
         currentHunger = maxHunger;
-        currentThirst = maxThirst;
         currentHealth = maxHealth;
+
+        // Водоплавающим жажда всегда фулл
+        currentThirst = isAquatic ? maxThirst : maxThirst;
 
         diet = GetComponent<DinoDiet>();
         interaction = GetComponent<InteractionSystem>();
@@ -36,13 +41,9 @@ public class SurvivalStats : MonoBehaviour
 
     void Update()
     {
-        // Истощение
         DepleteStats();
-
-        // Регенерация
         RegenerateHealth();
 
-        // Смерть от голода/жажды
         if (currentHealth <= 0)
         {
             Die();
@@ -51,17 +52,28 @@ public class SurvivalStats : MonoBehaviour
 
     void DepleteStats()
     {
+        // Голод всегда тратится
         currentHunger -= hungerDepleteRate * Time.deltaTime;
-        currentThirst -= thirstDepleteRate * Time.deltaTime;
 
-        // Урон если на нуле
+        // Жажда только у НЕ водоплавающих
+        if (!isAquatic)
+        {
+            currentThirst -= thirstDepleteRate * Time.deltaTime;
+        }
+        else
+        {
+            currentThirst = maxThirst;
+        }
+
+        // Урон от голода
         if (currentHunger <= 0)
         {
             currentHunger = 0;
             currentHealth -= hungerDamage * Time.deltaTime;
         }
 
-        if (currentThirst <= 0)
+        // Урон от жажды только наземным
+        if (!isAquatic && currentThirst <= 0)
         {
             currentThirst = 0;
             currentHealth -= thirstDamage * Time.deltaTime;
@@ -72,7 +84,10 @@ public class SurvivalStats : MonoBehaviour
     {
         if (currentHunger > regenThreshold && currentThirst > regenThreshold)
         {
-            currentHealth = Mathf.Min(currentHealth + healthRegenRate * Time.deltaTime, maxHealth);
+            currentHealth = Mathf.Min(
+                currentHealth + healthRegenRate * Time.deltaTime,
+                maxHealth
+            );
         }
     }
 
@@ -90,6 +105,9 @@ public class SurvivalStats : MonoBehaviour
 
     public void Drink(WaterSource water)
     {
+        // Водоплавающие не пьют вообще
+        if (isAquatic) return;
+
         if (water == null || !water.IsAvailable) return;
 
         if (water.TryDrink(out float value))
@@ -109,10 +127,14 @@ public class SurvivalStats : MonoBehaviour
     public float GetHungerPercent() => currentHunger / maxHunger;
     public float GetThirstPercent() => currentThirst / maxThirst;
     public float GetHealthPercent() => currentHealth / maxHealth;
+
     public float GetCurrentHunger() => currentHunger;
     public float GetCurrentThirst() => currentThirst;
     public float GetCurrentHealth() => currentHealth;
+
     public float GetMaxHunger() => maxHunger;
     public float GetMaxThirst() => maxThirst;
     public float GetMaxHealth() => maxHealth;
+
+    public bool IsAquatic() => isAquatic;
 }
