@@ -525,8 +525,8 @@ MonoBehaviour:
   interactableLayers:
     serializedVersion: 2
     m_Bits: 4294967295
-  scentDuration: 5
-  scentCooldown: 10
+  scentDuration: 10
+  scentCooldown: 5
   rayMaterial: {fileID: 0}
 --- !u!4 &607840792108804396 stripped
 Transform:

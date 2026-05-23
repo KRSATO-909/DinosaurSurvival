@@ -495,8 +495,8 @@ MonoBehaviour:
   fastFlightSpeed: 12
   flightAcceleration: 5
   flightRotationSpeed: 8
-  verticalSpeed: 5
-  verticalDamping: 4
+  verticalSpeed: 9
+  verticalDamping: 10
 --- !u!114 &9133113957472611451
 MonoBehaviour:
   m_ObjectHideFlags: 0

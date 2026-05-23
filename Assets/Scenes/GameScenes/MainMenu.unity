@@ -2970,6 +2970,7 @@ MonoBehaviour:
   musicVolume: 1
   sfxVolume: 1
   selectedDino: 0
+  nameScene: GameScene
 --- !u!4 &1561631592
 Transform:
   m_ObjectHideFlags: 0
@@ -2996,11 +2997,11 @@ AudioSource:
   serializedVersion: 4
   OutputAudioMixerGroup: {fileID: 0}
   m_audioClip: {fileID: 0}
-  m_Resource: {fileID: 0}
+  m_Resource: {fileID: 8300000, guid: 5706a62c26156004fb4fbae981222e0e, type: 3}
   m_PlayOnAwake: 1
   m_Volume: 1
   m_Pitch: 1
-  Loop: 0
+  Loop: 1
   Mute: 0
   Spatialize: 0
   SpatializePostEffects: 0
