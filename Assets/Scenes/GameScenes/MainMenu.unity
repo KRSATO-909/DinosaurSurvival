@@ -1151,7 +1151,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: df98571752a358541a671aaf6639ca74, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::MainMenuUI
-  gameSceneName: GameScene
+  gameSceneName: CharacterSelect
   settingsPanel: {fileID: 460544518}
 --- !u!1 &645240500
 GameObject:
@@ -2162,7 +2162,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -59.75043, y: -67}
+  m_AnchoredPosition: {x: -59.75043, y: -18.8}
   m_SizeDelta: {x: 2119.15, y: 1080}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1079645245
@@ -2969,6 +2969,7 @@ MonoBehaviour:
   showHints: 1
   musicVolume: 1
   sfxVolume: 1
+  selectedDino: 0
 --- !u!4 &1561631592
 Transform:
   m_ObjectHideFlags: 0

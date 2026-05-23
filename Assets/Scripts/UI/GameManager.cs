@@ -5,11 +5,17 @@ public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
 
-    public bool showHints = true; // показывать подсказки взаимодействи€
+    public bool showHints = true;
     public float musicVolume = 1f;
     public float sfxVolume = 1f;
 
+    // Ќовое: выбранный динозавр
+    public enum DinoType { None, TRex, Quetzalcoatlus, Mosasaurus }
+    public DinoType selectedDino = DinoType.None;
+
     private bool isPaused = false;
+
+    public string nameScene = "GameScene";
 
     private void Awake()
     {
@@ -27,7 +33,7 @@ public class GameManager : MonoBehaviour
 
     void Update()
     {
-        if (Input.GetKeyDown(KeyCode.Escape) && SceneManager.GetActiveScene().name != "MainMenu")
+        if (Input.GetKeyDown(KeyCode.Escape) && SceneManager.GetActiveScene().name != "MainMenu" && SceneManager.GetActiveScene().name != "CharacterSelect")
         {
             TogglePause();
         }
@@ -37,14 +43,24 @@ public class GameManager : MonoBehaviour
     {
         isPaused = !isPaused;
         Time.timeScale = isPaused ? 0f : 1f;
-        // «десь можно показать/скрыть панель паузы через UIManager
         UIManager.Instance?.ShowPauseMenu(isPaused);
+    }
+
+    public void SelectDino(DinoType type)
+    {
+        selectedDino = type;
     }
 
     public void LoadScene(string sceneName)
     {
         Time.timeScale = 1f;
         SceneManager.LoadScene(sceneName);
+    }
+
+    public void LoadGameScene()
+    {
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(nameScene); // тво€ игрова€ сцена
     }
 
     public void QuitGame()

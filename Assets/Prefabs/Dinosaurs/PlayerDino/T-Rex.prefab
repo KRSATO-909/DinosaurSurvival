@@ -219,7 +219,7 @@ AudioListener:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 9165874989748490694}
-  m_Enabled: 1
+  m_Enabled: 0
 --- !u!114 &7683141164546429809
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -436,6 +436,8 @@ MonoBehaviour:
   groundLayer:
     serializedVersion: 2
     m_Bits: 8
+  canWalkUnderWater: 1
+  waterBlockDistance: 3
   attackPoint: {fileID: 7187198752365463179}
   attackRange: 1
   attackCooldown: 0.8
@@ -508,11 +510,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1af86de0094ba6d4d8b5a88a52cc5e87, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurvivalStats
+  isAquatic: 0
   maxHunger: 100
-  hungerDepleteRate: 0.1
+  hungerDepleteRate: 0.2
   hungerDamage: 2
   maxThirst: 100
-  thirstDepleteRate: 0.2
+  thirstDepleteRate: 0.3
   thirstDamage: 4
   maxHealth: 100
   healthRegenRate: 1
@@ -531,7 +534,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::InteractionSystem
   interactKey: 101
   scentKey: 114
-  autoDetectRadius: 200
+  autoDetectRadius: 300
   interactableLayers:
     serializedVersion: 2
     m_Bits: 4294967295
